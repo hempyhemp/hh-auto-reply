@@ -1,11 +1,9 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
-import { applyToJobs, checkIsAuth, listResumes, login, type ResumeListItem, saveResume } from './scraper.js'
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+import { applyToJobs, checkIsAuth, listResumes, login, saveResume } from './scraper.js'
+import { type ResumeListItem } from './types.js'
+import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, showResult } from './ui.js'
 
 interface UserState {
   autoCron: ScheduledTask | null
@@ -39,33 +37,6 @@ function getState(chatId: number): UserState {
   return states.get(chatId)!
 }
 
-const MAIN_MARKUP = {
-  inline_keyboard: [
-    [{ text: '🚀 Откликнуться сейчас', callback_data: 'hh_apply' }],
-    [
-      { text: '🔍 Изменить запрос', callback_data: 'hh_query' },
-      { text: '🔢 Макс откликов', callback_data: 'hh_max' },
-    ],
-    [
-      { text: '⏰ Авто вкл', callback_data: 'hh_auto_start' },
-      { text: '⛔ Авто выкл', callback_data: 'hh_auto_stop' },
-    ],
-    [
-      { text: '🔑 Логин', callback_data: 'hh_login' },
-      { text: '⚙️ Статус', callback_data: 'hh_status' },
-    ],
-    [
-      { text: '📄 Выбрать резюме', callback_data: 'hh_resume_list' },
-      { text: '📋 Моё резюме', callback_data: 'hh_my_resume' },
-    ],
-  ],
-}
-
-const BACK_MARKUP = {
-  inline_keyboard: [[{ text: '◀️ Назад', callback_data: 'hh_back' }]],
-}
-
-// Редактирует существующее сообщение-меню или отправляет новое
 async function showMenu(chatId: number, messageId?: number | null): Promise<void> {
   const state = getState(chatId)
   const targetId = messageId ?? state.menuMessageId
@@ -85,19 +56,8 @@ async function showMenu(chatId: number, messageId?: number | null): Promise<void
     }
   }
 
-  const msg = await bot.sendMessage(chatId, '🤖 HH Auto-Apply', {
-    reply_markup: MAIN_MARKUP,
-  })
+  const msg = await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_MARKUP })
   state.menuMessageId = msg.message_id
-}
-
-// Редактирует сообщение с меню: показывает текст + кнопку "Назад"
-async function showResult(chatId: number, messageId: number, text: string): Promise<void> {
-  await bot.editMessageText(text, {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: BACK_MARKUP,
-  })
 }
 
 async function sendResumeSelector(chatId: number, resumes: ResumeListItem[], messageId: number): Promise<void> {
@@ -146,6 +106,13 @@ async function doLogin(chatId: number, email: string): Promise<void> {
 }
 
 export async function triggerHHStart(chatId: number): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+  if (!user?.session) {
+    const state = getState(chatId)
+    const msg = await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: LOGIN_MARKUP })
+    state.menuMessageId = msg.message_id
+    return
+  }
   await showMenu(chatId)
 }
 
@@ -176,21 +143,19 @@ export function registerHHCommands() {
         break
 
       case 'hh_apply': {
-        await bot.editMessageText(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`, {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: { inline_keyboard: [] },
-        })
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
         state.menuMessageId = null
 
-        applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId })
+        const reporter = createStatusReporter(chatId)
+        await reporter.status(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`)
+
+        applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId, reporter })
           .then(async (result) => {
             if (result.error) {
               await bot.sendMessage(chatId, `❌ ${result.error}`)
             }
             else {
               const lines: string[] = []
-
               lines.push(`📊 <b>Итого по запросу «${settings.searchQuery}»</b>`)
               lines.push(`✅ Откликнулся: ${result.applied.length}`)
               lines.push(`⏭ Пропущено: ${result.skipped.length}`)
@@ -224,7 +189,7 @@ export function registerHHCommands() {
         await showResult(
           chatId,
           messageId,
-          `⚙️ Настройки:\n\nЗапрос: ${settings.searchQuery}\nМакс откликов: ${settings.maxApplies}\nАвто: ${state.autoCron ? '✅ включено' : '😬 выключено'}\nАвторизован: ${isAuth}`,
+          `⚙️ Настройки:\n\nЗапрос: ${settings.searchQuery}\nМакс откликов: ${settings.maxApplies}\nАвто: ${state.autoCron ? '✅ включено' : '❌ выключено'}\nАвторизован: ${isAuth}`,
         )
         break
       }
@@ -238,12 +203,10 @@ export function registerHHCommands() {
           await showResult(chatId, messageId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
           break
         }
-
         const MAX = 3800
         const text = resume.data.length > MAX
           ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
           : resume.data
-
         await bot.editMessageText(
           `📋 <b>Твоё резюме</b>\n<pre>${escapeHtml(text)}</pre>`,
           {
@@ -331,7 +294,7 @@ export function registerHHCommands() {
         })
         const resumes = await listResumes(chatId)
         if (resumes.length === 0) {
-          await showResult(chatId, messageId, '😬 Резюме не найдены. Создайте резюме на hh.ru')
+          await showResult(chatId, messageId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
         }
         else if (resumes.length === 1) {
           await bot.editMessageText('🔄 Сохраняю резюме...', {
@@ -354,7 +317,7 @@ export function registerHHCommands() {
           const idx = Number(query.data.replace('hh_resume_pick_', ''))
           const resume = state.pendingResumes[idx]
           if (!resume) {
-            await showResult(chatId, messageId, '😬 Резюме не найдено, попробуйте снова')
+            await showResult(chatId, messageId, '❌ Резюме не найдено, попробуйте снова')
             break
           }
           await bot.editMessageText('🔄 Сохраняю резюме...', {
@@ -410,7 +373,7 @@ export function registerHHCommands() {
     if (state.awaitingMax) {
       const num = Number(msg.text)
       if (Number.isNaN(num) || num < 1 || num > 50) {
-        await bot.sendMessage(chatId, '😬 Введи число от 1 до 50:')
+        await bot.sendMessage(chatId, '❌ Введи число от 1 до 50:')
         return
       }
       state.awaitingMax = false

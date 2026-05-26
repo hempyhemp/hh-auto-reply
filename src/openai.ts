@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 // import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'

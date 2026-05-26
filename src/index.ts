@@ -1,8 +1,7 @@
 import bot from '@bot'
-import prisma from '@prisma'
 
-import { triggerHHStart } from './hh/bot-commands.js'
-import { registerHHCommands } from './hh/bot-commands.js'
+import prisma from '@prisma'
+import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 
 registerHHCommands()
 

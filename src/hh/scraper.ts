@@ -1,153 +1,71 @@
 import type { Message } from 'node-telegram-bot-api'
+import type { ApplyOptions, ApplyResult, ResumeListItem, VacancyRef } from './types.js'
+import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
-import { type Browser, chromium, type Page } from 'playwright'
 import { createMessage } from '../openai'
-
-// const SESSION_FILE = path.resolve('./session.json')
-
-interface ApplyOptions {
-  query: string
-  area?: number
-  maxApplies?: number
-}
-
-interface VacancyRef {
-  title: string
-  href: string
-}
-
-interface ApplyResult {
-  applied: VacancyRef[]
-  skipped: VacancyRef[]
-  errors: Array<VacancyRef & { message: string }>
-  error?: string
-}
-
-function randomDelay(min = 300, max = 2000) {
-  return min + Math.random() * (max - min)
-}
-
-async function humanDelay(min = 300, max = 2000) {
-  return new Promise(r => setTimeout(r, randomDelay(min, max)))
-}
-
-async function randomScroll(page: Page) {
-  await page.mouse.move(100 + Math.random() * 500, 200 + Math.random() * 500)
-  await page.mouse.wheel(0, 300 + Math.random() * 1000)
-}
-
-async function getBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: false })
-}
-
-async function loadSession(page: Page, telegramId: bigint | number): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { telegramId },
-  })
-
-  const session = user?.session
-
-  if (!session)
-    return false
-
-  const cookies = JSON.parse(session)
-  await page.context().addCookies(cookies)
-  return true
-}
+import { getBrowser, loadSession, randomDelay } from './browser.js'
 
 function waitForOtp(chatId: number): Promise<string> {
   return new Promise((resolve) => {
     const handler = (msg: Message) => {
-      if (msg.chat.id !== chatId)
+      if (msg.chat.id !== chatId || !msg.text)
         return
-
-      if (!msg.text)
-        return
-
       bot.removeListener('message', handler)
       resolve(msg.text)
     }
-
     bot.on('message', handler)
   })
 }
 
-export async function login(
-  email: string,
-  chatId: number,
-): Promise<void> {
+export async function login(email: string, chatId: number): Promise<void> {
   const browser = await getBrowser()
-  await bot.sendMessage(chatId, `Browser is connected: ${browser.isConnected()}`)
-  if (!browser.version())
+  // await bot.sendMessage(chatId, `Browser is connected: ${browser.isConnected()}`)
+  if (!browser.version()) {
+    console.log('browser error')
     return
-  // await bot.sendMessage(chatId, `Browser version: ${browser.version()}`)
+  }
 
   const context = await browser.newContext()
   const page = await context.newPage()
 
   await page.goto('https://hh.ru/account/login', { waitUntil: 'networkidle' })
-
   await bot.sendMessage(chatId, `page: ${page.url()}`)
 
   await page.click('[data-qa="submit-button"]')
-
   await page.waitForTimeout(randomDelay())
-
-  await bot.sendMessage(chatId, `Клик по "Войти"`)
+  // await bot.sendMessage(chatId, `Клик по "Войти"`)
 
   await page.click('label:has([data-qa="credential-type-EMAIL"])')
-
   await page.waitForTimeout(randomDelay())
-
-  await bot.sendMessage(chatId, `Клик по "Email"`)
-
-  await page.waitForTimeout(randomDelay())
+  // await bot.sendMessage(chatId, `Клик по "Email"`)
 
   await page.fill('[data-qa="applicant-login-input-email"]', email)
-
   await page.waitForTimeout(randomDelay())
-
-  await bot.sendMessage(chatId, `Ввод "Email"`)
+  // await bot.sendMessage(chatId, `Ввод "Email"`)
 
   await page.click('[data-qa="submit-button"]')
-
-  await bot.sendMessage(chatId, `Клик по "Дальше"`)
-
+  // await bot.sendMessage(chatId, `Клик по "Дальше"`)
   await page.waitForTimeout(randomDelay())
 
   await bot.sendMessage(chatId, '🔑 Введи код из email')
-
   await page.waitForTimeout(randomDelay())
 
   await page.click('[data-qa="applicant-login-input-otp"]')
-
   const otp = await waitForOtp(chatId)
-
   await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
-
-  await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
+  // await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
 
   await page.waitForTimeout(randomDelay())
-
   await page.waitForLoadState('networkidle')
 
   const cookies = await context.cookies()
-
   await prisma.user.update({
     where: { telegramId: chatId },
-    data: {
-      session: JSON.stringify(cookies, null, 2),
-    },
+    data: { session: JSON.stringify(cookies, null, 2) },
   })
 
-  if (cookies.length > 0) {
-    await bot.sendMessage(chatId, `✅ Авторизация выполнена`)
-  }
-  else {
-    await bot.sendMessage(chatId, `😬 Произошла ошибка`)
-  }
-
+  await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
   await browser.close()
 }
 
@@ -155,27 +73,14 @@ export async function checkIsAuth(telegramId: bigint | number) {
   const browser = await getBrowser()
   const context = await browser.newContext()
   const page = await context.newPage()
-
   await loadSession(page, telegramId)
-
-  console.log('Сессия загружена')
-
-  const url = `https://hh.ru/search/vacancy`
-
-  await page.goto(url, { waitUntil: 'networkidle' })
-
+  await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'networkidle' })
   try {
     return await page.$('[data-qa="profileAndResumes-button"]')
   }
   catch (e) {
     return e
   }
-  // return await page.$('[data-qa="mainmenu_createResume"]')
-}
-
-export interface ResumeListItem {
-  title: string
-  href: string
 }
 
 export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
@@ -219,7 +124,7 @@ export async function saveResume(chatId: number, resumeHref: string): Promise<st
   }
   catch (e) {
     console.log(e)
-    await bot.sendMessage(chatId, 'Нет резюме на ХХ, создайте')
+    await bot.sendMessage(chatId, 'Нет резюме на hh.ru, создайте')
   }
   finally {
     await browser.close()
@@ -228,36 +133,15 @@ export async function saveResume(chatId: number, resumeHref: string): Promise<st
   return resume
 }
 
-export async function applyToJobs({
-  query,
-  area = 1,
-  maxApplies = 10,
-}: ApplyOptions, { chatId }: {
-  chatId: number
-}): Promise<ApplyResult> {
+export async function applyToJobs(
+  { query, area = 1, maxApplies = 10 }: ApplyOptions,
+  { chatId, reporter }: { chatId: number, reporter: StatusReporter },
+): Promise<ApplyResult> {
   const browser = await getBrowser()
   const context = await browser.newContext()
   const page = await context.newPage()
   const results: ApplyResult = { applied: [], skipped: [], errors: [] }
-
-  let statusMsgId: number | null = null
-
-  async function status(text: string): Promise<void> {
-    if (statusMsgId) {
-      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
-      statusMsgId = null
-    }
-    const msg = await bot.sendMessage(chatId, text)
-    statusMsgId = msg.message_id
-  }
-
-  async function keep(text: string): Promise<void> {
-    if (statusMsgId) {
-      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
-      statusMsgId = null
-    }
-    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' })
-  }
+  const { status, keep, clear } = reporter
 
   try {
     await loadSession(page, chatId)
@@ -265,12 +149,11 @@ export async function applyToJobs({
     const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&area=${area}`
     await page.goto(url, { waitUntil: 'networkidle' })
 
-    const isLoggedIn = await page.$('[data-qa="profileAndResumes-button"]')
-    if (!isLoggedIn) {
+    if (!await page.$('[data-qa="profileAndResumes-button"]')) {
       return { ...results, error: 'Не авторизован. Выполните login' }
     }
 
-    await status(`✅ Авторизация выполнена`)
+    await status('✅ Авторизация выполнена')
 
     const vacancies = await page.$$eval(
       '[data-qa="serp-item__title"]',
@@ -309,7 +192,6 @@ export async function applyToJobs({
         await status(`✍️ Генерирую письмо: ${vacancy.title}`)
 
         const letter = await createMessage(resume.data, description, user!.prompt)
-
         await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
 
         results.applied.push(ref)
@@ -319,10 +201,7 @@ export async function applyToJobs({
       }
     }
 
-    if (statusMsgId) {
-      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
-      statusMsgId = null
-    }
+    await clear()
   }
   finally {
     await browser.close()
