@@ -1,0 +1,64 @@
+# dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# build output
+dist/
+build/
+out/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# logs
+logs/
+*.log
+
+# runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# coverage
+coverage/
+*.lcov
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# testing
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Docker
+.docker/
+
+# optional cache
+.cache/
+.tmp/
+
+# parcel / vite / webpack cache (если есть фронт сборка)
+.parcel-cache/
+.esbuild/
+.vite/
+
+# Prisma (если используешь)
+prisma/migrations/dev.db*
+prisma/migrations/*.db
+
+# sensitive
+session.json
+prisma/dev.db

@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// output   = "../src/generated/prisma"
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  telegramId BigInt    @unique
+  username   String?
+  firstName  String?
+  createdAt  DateTime  @default(now())
+  session    String?
+  hhEmail    String?
+  resumes    Resume[]
+  prompt     String    @default("Напиши сопроводительное письмо опираясь на резюме. Пиши грамотно и коротко, простым языком не официально. Пиши только текст самого письма, ты пишешь напрямую в компанию. Мне отвечать или делать ремарки не нужно.")
+  Settings   Settings?
+}
+
+model Resume {
+  id         String @id
+  user       User   @relation(references: [telegramId], fields: [telegramId], onDelete: Cascade)
+  data       String
+  telegramId BigInt
+}
+
+model Settings {
+  telegramId  BigInt @id
+  user        User   @relation(references: [telegramId], fields: [telegramId], onDelete: Cascade)
+  searchQuery String @default("Vue")
+  maxApplies  Int    @default(1)
+}
