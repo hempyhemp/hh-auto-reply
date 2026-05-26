@@ -1,6 +1,5 @@
 import bot from '@bot'
 import { triggerHHStart } from '@/hh/bot-commands'
-import { getResume } from '@/hh/scraper'
 
 export function sendMenu(chatId: number, isFirstTime: boolean) {
   const text = isFirstTime
@@ -34,9 +33,9 @@ bot.on('message', async (msg) => {
       break
 
     case '👤 Debug': {
-      const resume = await getResume(chatId)
-
-      await bot.sendMessage(chatId, resume || '--')
+      // const resume = await getResume(chatId)
+      //
+      // await bot.sendMessage(chatId, resume || '--')
 
       // const letter = await askGPT('test')
       //
