@@ -81,25 +81,26 @@ export async function askLLM(userMessage: string) {
   return textPart?.text ?? ''
 }
 
-export async function createMessage(resume: string, message: string, prompt: string) {
+export async function createMessage(resume: string, message: string, prompt?: string) {
   const client = await getClient()
 
   const session = await client.session.create({ body: { title: 'Cover letter' } })
   const sessionId = session.data!.id
 
+  const finalPromt = 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений. Пиши по короче и простыми словами. В конце письма оставляй все контакты для связи.'
   // Задаём роль без ответа
   await client.session.prompt({
     path: { id: sessionId },
     body: {
       noReply: true,
-      parts: [{ type: 'text', text: 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений.' }],
+      parts: [{ type: 'text', text: finalPromt }],
     },
   })
-
+  // ${prompt}\n\n
   const result = await client.session.prompt({
     path: { id: sessionId },
     body: {
-      parts: [{ type: 'text', text: `${prompt}\n\nРезюме:\n${resume}\n\nВакансия:\n${message}` }],
+      parts: [{ type: 'text', text: `Резюме:\n${resume}\n\nВакансия:\n${message}` }],
     },
   })
 

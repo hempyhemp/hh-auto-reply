@@ -12,10 +12,15 @@ interface ApplyOptions {
   maxApplies?: number
 }
 
+interface VacancyRef {
+  title: string
+  href: string
+}
+
 interface ApplyResult {
-  applied: string[]
-  skipped: string[]
-  errors: string[]
+  applied: VacancyRef[]
+  skipped: VacancyRef[]
+  errors: Array<VacancyRef & { message: string }>
   error?: string
 }
 
@@ -76,7 +81,7 @@ export async function login(
   await bot.sendMessage(chatId, `Browser is connected: ${browser.isConnected()}`)
   if (!browser.version())
     return
-  await bot.sendMessage(chatId, `Browser version: ${browser.version()}`)
+  // await bot.sendMessage(chatId, `Browser version: ${browser.version()}`)
 
   const context = await browser.newContext()
   const page = await context.newPage()
@@ -136,7 +141,12 @@ export async function login(
     },
   })
 
-  await bot.sendMessage(chatId, `cookies: ${cookies.length}`)
+  if (cookies.length > 0) {
+    await bot.sendMessage(chatId, `✅ Авторизация выполнена`)
+  }
+  else {
+    await bot.sendMessage(chatId, `😬 Произошла ошибка`)
+  }
 
   await browser.close()
 }
@@ -230,6 +240,25 @@ export async function applyToJobs({
   const page = await context.newPage()
   const results: ApplyResult = { applied: [], skipped: [], errors: [] }
 
+  let statusMsgId: number | null = null
+
+  async function status(text: string): Promise<void> {
+    if (statusMsgId) {
+      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
+      statusMsgId = null
+    }
+    const msg = await bot.sendMessage(chatId, text)
+    statusMsgId = msg.message_id
+  }
+
+  async function keep(text: string): Promise<void> {
+    if (statusMsgId) {
+      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
+      statusMsgId = null
+    }
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' })
+  }
+
   try {
     await loadSession(page, chatId)
 
@@ -237,12 +266,11 @@ export async function applyToJobs({
     await page.goto(url, { waitUntil: 'networkidle' })
 
     const isLoggedIn = await page.$('[data-qa="profileAndResumes-button"]')
-    // await page.$('[data-qa="mainmenu_myResumes"]')
     if (!isLoggedIn) {
       return { ...results, error: 'Не авторизован. Выполните login' }
     }
 
-    await bot.sendMessage(chatId, `✅ Авторизация выполнена`)
+    await status(`✅ Авторизация выполнена`)
 
     const vacancies = await page.$$eval(
       '[data-qa="serp-item__title"]',
@@ -252,64 +280,48 @@ export async function applyToJobs({
       })),
     )
 
-    await bot.sendMessage(chatId, `✅ Вакансий найдено: ${vacancies.length}`)
+    await status(`✅ Вакансий найдено: ${vacancies.length}`)
+
+    const resume = await prisma.resume.findFirst({ where: { telegramId: chatId } })
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+
+    if (!resume?.data) {
+      await keep('❌ Резюме не выбрано — выбери резюме через меню')
+      return results
+    }
 
     for (const vacancy of vacancies.slice(0, maxApplies)) {
+      const ref: VacancyRef = { title: vacancy.title, href: vacancy.href }
       try {
-        await bot.sendMessage(chatId, `🔄 Обрабатывается вакансия: ${vacancy.title}`)
+        await status(`🔄 Обрабатывается: ${vacancy.title}`)
         await page.goto(vacancy.href, { waitUntil: 'networkidle' })
 
         const description = await page
           .locator('[data-qa="vacancy-description"]')
           .innerText()
+          .catch(() => '')
 
         if (!description) {
-          await bot.sendMessage(chatId, `😬 Ошибка с получением описания`)
+          results.skipped.push(ref)
           continue
         }
 
-        await bot.sendMessage(chatId, `✅ Описание получено`)
+        await status(`✍️ Генерирую письмо: ${vacancy.title}`)
 
-        const resume = await prisma.resume.findFirst({
-          where: { telegramId: chatId },
-        })
+        const letter = await createMessage(resume.data, description, user!.prompt)
 
-        if (!resume?.data) {
-          results.errors.push(`${vacancy.title}: резюме не выбрано — выберите резюме через меню`)
-          continue
-        }
+        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
 
-        const user = await prisma.user.findUnique({
-          where: { telegramId: chatId },
-        })
-
-        const letter = await createMessage(resume!.data, description, user!.prompt)
-
-        await bot.sendMessage(chatId, `✅ Сопроводительное письмо отправлено: ${letter}`)
-
-        // const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
-        // if (!applyBtn) {
-        //   results.skipped.push(vacancy.title)
-        //   continue
-        // }
-        //
-        // await randomScroll(page)
-        //
-        // await applyBtn.click()
-        // await page.waitForTimeout(randomDelay())
-        //
-        // const submitBtn = await page.$('[data-qa="vacancy-response-popup-submit"]')
-        // if (submitBtn) {
-        //   await submitBtn.click()
-        //   await page.waitForTimeout(randomDelay())
-        // }
-
-        results.applied.push(vacancy.title)
-        // await page.waitForTimeout(3000 + Math.random() * 2000)
+        results.applied.push(ref)
       }
       catch (err) {
-        results.errors.push(`${vacancy.title}: ${(err as Error).message}`)
+        results.errors.push({ ...ref, message: (err as Error).message })
       }
+    }
+
+    if (statusMsgId) {
+      await bot.deleteMessage(chatId, statusMsgId).catch(() => {})
+      statusMsgId = null
     }
   }
   finally {
