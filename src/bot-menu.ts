@@ -1,5 +1,6 @@
 import bot from '@bot'
 import { triggerHHStart } from '@/hh/bot-commands'
+import { askLLM } from '@/openai'
 
 export function sendMenu(chatId: number, isFirstTime: boolean) {
   const text = isFirstTime
@@ -33,6 +34,7 @@ bot.on('message', async (msg) => {
       break
 
     case '👤 Debug': {
+      askLLM('Привет, как дела?')
       // const resume = await getResume(chatId)
       //
       // await bot.sendMessage(chatId, resume || '--')

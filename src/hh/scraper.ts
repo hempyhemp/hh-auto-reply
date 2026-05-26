@@ -2,7 +2,7 @@ import type { Message } from 'node-telegram-bot-api'
 import bot from '@bot'
 import prisma from '@prisma'
 import { type Browser, chromium, type Page } from 'playwright'
-import { askOpenCode } from '../openai'
+import { askLLM } from '../openai'
 
 // const SESSION_FILE = path.resolve('./session.json')
 
@@ -284,7 +284,7 @@ export async function applyToJobs({
         })
 
         // const letter = await askGPT(resume!.data, description, user!.prompt)
-        const letter = await askOpenCode(resume!.data, description, user!.prompt)
+        const letter = await askLLM(resume!.data, description, user!.prompt)
 
         await bot.sendMessage(chatId, `✅ Сопроводительное письмо отправлено: ${letter}`)
 

@@ -1,4 +1,4 @@
-import { createOpencode } from '@opencode-ai/sdk'
+import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 // import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 
@@ -13,9 +13,15 @@ async function getOpencode() {
     _opencode = await createOpencode({
       hostname: '127.0.0.1',
       port: 4096,
-      config: { model: 'anthropic/claude-3-5-sonnet-20241022' },
+      config: {
+        model: 'openrouter/deepseek/deepseek-v4-flash',
+        provider: {
+          openrouter: {
+            options: { apiKey: process.env.OPENROUTER_API_KEY },
+          },
+        },
+      },
     })
-    console.log(`OpenCode server running at ${_opencode.server.url}`)
   }
   return _opencode
 }
@@ -25,8 +31,43 @@ export const groq = new OpenAI({
   baseURL: 'https://api.groq.com/openai/v1',
 })
 
+export async function test() {
+  const client = createOpencodeClient({
+    baseUrl: 'http://localhost:4096',
+  })
+
+  const test = await client.config.providers()
+  console.log(test.data)
+}
+
+export async function askLLM(userMessage: string) {
+  const oc = await getOpencode()
+  const client = oc.client
+
+  // Создаём сессию
+  const session = await client.session.create({
+    body: { title: 'My request' },
+  })
+
+  // console.log('session: ', session.data)
+
+  const result = await client.session.prompt({
+    path: { id: session.data!.id },
+    body: {
+      parts: [{ type: 'text', text: userMessage }],
+    },
+  })
+
+  // console.log('result: ', result.data)
+
+  const textPart = result.data?.parts?.find((p: { type: string }) => p.type === 'text') as { type: 'text', text: string } | undefined
+  // console.log(textPart?.text ?? '')
+  return textPart?.text ?? ''
+}
+
 export async function askOpenCode(resume: string, message: string, prompt: string) {
   const opencode = await getOpencode()
+
   const session = await opencode.client.session.create({})
   const sessionId = session.data?.id || '0'
   console.log('sessionId: ', sessionId)
@@ -34,15 +75,20 @@ export async function askOpenCode(resume: string, message: string, prompt: strin
   const result = await opencode.client.session.prompt({
     path: { id: sessionId },
     body: {
+      model: {
+        providerID: 'anthropic',
+        modelID: 'claude-3-5-sonnet-20241022',
+      },
       parts: [
         { type: 'text', text: `${prompt}\n\n${resume}\n\n${message}` },
       ],
     },
   })
 
-    console.log(result)
+  console.log(JSON.stringify(result?.data, null, 2))
 
-  const textPart = result.data?.parts?.find((p: { type: string }) => p.type === 'text') as { type: 'text', text: string } | undefined
+  const parts = (result.data as any)?.parts ?? []
+  const textPart = parts.find((p: { type: string }) => p.type === 'text') as { type: 'text', text: string } | undefined
   return textPart?.text ?? null
 }
 
