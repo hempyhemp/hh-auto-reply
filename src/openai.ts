@@ -6,24 +6,41 @@ import OpenAI from 'openai'
 //   apiKey: process.env.ANTHROPIC_API_KEY,
 // })
 
-let _opencode: Awaited<ReturnType<typeof createOpencode>> | null = null
+const OPENCODE_URL = 'http://127.0.0.1:4096'
 
-async function getOpencode() {
-  if (!_opencode) {
-    _opencode = await createOpencode({
-      hostname: '127.0.0.1',
-      port: 4096,
-      config: {
-        model: 'openrouter/deepseek/deepseek-v4-flash',
-        provider: {
-          openrouter: {
-            options: { apiKey: process.env.OPENROUTER_API_KEY },
-          },
+let _client: ReturnType<typeof createOpencodeClient> | null = null
+
+async function getClient() {
+  if (_client)
+    return _client
+
+  // Если сервер уже запущен (напр. после хот-релоада) — просто подключаемся
+  try {
+    const existing = createOpencodeClient({ baseUrl: OPENCODE_URL })
+    await existing.session.list()
+    _client = existing
+    return _client
+  }
+  catch {}
+
+  // Иначе стартуем новый сервер
+  const oc = await createOpencode({
+    hostname: '127.0.0.1',
+    port: 4096,
+    config: {
+      model: 'openrouter/deepseek/deepseek-v4-flash',
+      provider: {
+        openrouter: {
+          options: { apiKey: process.env.OPENROUTER_API_KEY },
         },
       },
-    })
-  }
-  return _opencode
+      agent: {
+        build: { tools: { '*': false } },
+      },
+    },
+  })
+  _client = oc.client
+  return _client
 }
 
 export const groq = new OpenAI({
@@ -41,9 +58,8 @@ export async function test() {
 }
 
 export async function askLLM(userMessage: string) {
-  const oc = await getOpencode()
-  const client = oc.client
-
+  const client = await getClient()
+  console.log('askLLM')
   // Создаём сессию
   const session = await client.session.create({
     body: { title: 'My request' },
@@ -65,30 +81,30 @@ export async function askLLM(userMessage: string) {
   return textPart?.text ?? ''
 }
 
-export async function askOpenCode(resume: string, message: string, prompt: string) {
-  const opencode = await getOpencode()
+export async function createMessage(resume: string, message: string, prompt: string) {
+  const client = await getClient()
 
-  const session = await opencode.client.session.create({})
-  const sessionId = session.data?.id || '0'
-  console.log('sessionId: ', sessionId)
+  const session = await client.session.create({ body: { title: 'Cover letter' } })
+  const sessionId = session.data!.id
 
-  const result = await opencode.client.session.prompt({
+  // Задаём роль без ответа
+  await client.session.prompt({
     path: { id: sessionId },
     body: {
-      model: {
-        providerID: 'anthropic',
-        modelID: 'claude-3-5-sonnet-20241022',
-      },
-      parts: [
-        { type: 'text', text: `${prompt}\n\n${resume}\n\n${message}` },
-      ],
+      noReply: true,
+      parts: [{ type: 'text', text: 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений.' }],
     },
   })
 
-  console.log(JSON.stringify(result?.data, null, 2))
+  const result = await client.session.prompt({
+    path: { id: sessionId },
+    body: {
+      parts: [{ type: 'text', text: `${prompt}\n\nРезюме:\n${resume}\n\nВакансия:\n${message}` }],
+    },
+  })
 
-  const parts = (result.data as any)?.parts ?? []
-  const textPart = parts.find((p: { type: string }) => p.type === 'text') as { type: 'text', text: string } | undefined
+  const parts = (result.data?.parts ?? []) as { type: string, text?: string }[]
+  const textPart = parts.find(p => p.type === 'text')
   return textPart?.text ?? null
 }
 
