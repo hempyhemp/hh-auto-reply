@@ -670,6 +670,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@opencode-ai/sdk@npm:^1.15.10":
+  version: 1.15.10
+  resolution: "@opencode-ai/sdk@npm:1.15.10"
+  dependencies:
+    cross-spawn: "npm:7.0.6"
+  checksum: 10c0/db08a83cb7e705480c61877150c1882e5c38ffd0d122801f566dbfb187a1ddfdc6b8e0a146710271eee8dd950d7a823c32b5845a3a6e80280a0650c792d5f6a1
+  languageName: node
+  linkType: hard
+
 "@package-json/types@npm:^0.0.12":
   version: 0.0.12
   resolution: "@package-json/types@npm:0.0.12"
@@ -1848,7 +1857,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cross-spawn@npm:^7.0.6":
+"cross-spawn@npm:7.0.6, cross-spawn@npm:^7.0.6":
   version: 7.0.6
   resolution: "cross-spawn@npm:7.0.6"
   dependencies:
@@ -4998,6 +5007,7 @@ __metadata:
   resolution: "oscr-test-bot@workspace:."
   dependencies:
     "@antfu/eslint-config": "npm:^3.14.0"
+    "@opencode-ai/sdk": "npm:^1.15.10"
     "@prisma/client": "npm:6"
     "@types/node": "npm:^25.6.0"
     "@types/node-cron": "npm:^3.0.11"
