@@ -2,7 +2,7 @@ import type { Message } from 'node-telegram-bot-api'
 import bot from '@bot'
 import prisma from '@prisma'
 import { type Browser, chromium, type Page } from 'playwright'
-import { askGPT } from '../openai'
+import { askOpenCode } from '../openai'
 
 // const SESSION_FILE = path.resolve('./session.json')
 
@@ -33,7 +33,7 @@ async function randomScroll(page: Page) {
 }
 
 async function getBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: true })
+  return chromium.launch({ headless: false })
 }
 
 async function loadSession(page: Page, telegramId: bigint | number): Promise<boolean> {
@@ -139,8 +139,6 @@ export async function login(
   await bot.sendMessage(chatId, `cookies: ${cookies.length}`)
 
   await browser.close()
-
-  await getResume(chatId)
 }
 
 export async function checkIsAuth(telegramId: bigint | number) {
@@ -165,30 +163,44 @@ export async function checkIsAuth(telegramId: bigint | number) {
   // return await page.$('[data-qa="mainmenu_createResume"]')
 }
 
-export async function getResume(chatId: number) {
+export interface ResumeListItem {
+  title: string
+  href: string
+}
+
+export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   const browser = await getBrowser()
   const context = await browser.newContext()
   const page = await context.newPage()
   await loadSession(page, chatId)
-  const url = `https://hh.ru/applicant/resumes`
-  await page.goto(url, { waitUntil: 'networkidle' })
+  await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'networkidle' })
 
-  const text = await page
-    .$('[data-qa^="resume-card-link-"]')
-    .then(html => html?.getAttribute('href'))
+  const resumes = await page.$$eval(
+    '[data-qa^="resume-card-link-"]',
+    links => links.map(a => ({
+      href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
+      title: a.textContent?.trim() ?? '(без названия)',
+    })),
+  )
 
-  const hhUrl = new URL(`https://hh.ru${text}`)
+  await browser.close()
+  return resumes
+}
 
-  const id = hhUrl.pathname.split('/').pop()!
+export async function saveResume(chatId: number, resumeHref: string): Promise<string | undefined> {
+  const browser = await getBrowser()
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  await loadSession(page, chatId)
 
+  const id = new URL(`https://hh.ru${resumeHref}`).pathname.split('/').pop()!
   const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
 
   await page.goto(resumeUrl, { waitUntil: 'networkidle' })
 
-  let resume
+  let resume: string | undefined
   try {
     resume = await page.locator('.resume').innerText()
-
     await prisma.resume.upsert({
       where: { id },
       create: { data: resume, id, telegramId: chatId },
@@ -263,14 +275,16 @@ export async function applyToJobs({
         })
 
         if (!resume?.data) {
-          await getResume(chatId)
+          results.errors.push(`${vacancy.title}: резюме не выбрано — выберите резюме через меню`)
+          continue
         }
 
         const user = await prisma.user.findUnique({
           where: { telegramId: chatId },
         })
 
-        const letter = await askGPT(resume!.data, description, user!.prompt)
+        // const letter = await askGPT(resume!.data, description, user!.prompt)
+        const letter = await askOpenCode(resume!.data, description, user!.prompt)
 
         await bot.sendMessage(chatId, `✅ Сопроводительное письмо отправлено: ${letter}`)
 
