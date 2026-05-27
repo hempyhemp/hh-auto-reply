@@ -1,0 +1,52 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Keyscan
+        run: |
+          ssh-keyscan git.koptilnya.xyz >> ~/.ssh/known_hosts
+
+      - name: Set up secret file
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | sed 's/./& /g'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-strict: false
+          persist-credentials: false
+
+      #      - name: Backup DB
+      #        run: cp /home/koptilnya/services/chad/data/database.db /home/koptilnya/services/chad/database-$(date+"%d-%m-%Y").db
+
+      - name: Build
+        run: docker build -t hh-auto-reply ./server
+
+      - name: Stop old container
+        run: docker rm -f hh-auto-reply || true
+
+      - name: Run
+        run: |
+          docker run -d \
+            --name hh-auto-reply \
+            --network traefik \
+            --volume /home/koptilnya/services/chad/data:/app/data \
+            -p 40000-40100:40000-40100/udp \
+            --label "traefik.enable=true" \
+            --label "traefik.http.routers.hh-auto-reply.rule=Host(\`api.koptilnya.xyz\`) && PathPrefix(\`/hh-auto-reply\`)" \
+            --label "traefik.http.routers.hh-auto-reply.entrypoints=websecure" \
+            --label "traefik.http.routers.hh-auto-reply.tls=true" \
+            --label "traefik.http.routers.hh-auto-reply.tls.certresolver=myresolver" \
+            --label "traefik.http.services.hh-auto-reply.loadbalancer.server.port=80" \
+            hh-auto-reply:latest

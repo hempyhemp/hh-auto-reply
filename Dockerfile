@@ -23,6 +23,7 @@ RUN yarn prisma generate && yarn build
 FROM node:22-slim AS runner
 
 WORKDIR /app
+RUN yarn prisma migrate deploy
 
 RUN corepack enable
 
