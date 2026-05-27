@@ -202,7 +202,7 @@ export function registerHHCommands() {
               if (result.errors.length) {
                 lines.push('')
                 lines.push('❌ <b>Ошибки:</b>')
-                result.errors.forEach(v => lines.push(`• <a href="${v.href}">${v.title}</a> — ${v.message}`))
+                result.errors.forEach(v => lines.push(`• <a href="${v.href}">${escapeHtml(v.title)}</a> — ${escapeHtml(v.message ?? '')}`))
               }
 
               const fullText = lines.join('\n')
@@ -230,10 +230,9 @@ export function registerHHCommands() {
       }
 
       case 'hh_my_resume': {
-        const resume = await prisma.resume.findFirst({
-          where: { telegramId: chatId },
-          orderBy: { id: 'asc' },
-        })
+        const resume = settings?.selectedResumeId
+          ? await prisma.resume.findUnique({ where: { id: settings.selectedResumeId } })
+          : await prisma.resume.findFirst({ where: { telegramId: chatId } })
         if (!resume) {
           await showResult(chatId, messageId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
           break

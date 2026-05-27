@@ -36,8 +36,9 @@ model Resume {
 }
 
 model Settings {
-  telegramId  BigInt @id
-  user        User   @relation(references: [telegramId], fields: [telegramId], onDelete: Cascade)
-  searchQuery String @default("Vue")
-  maxApplies  Int    @default(1)
+  telegramId       BigInt  @id
+  user             User    @relation(references: [telegramId], fields: [telegramId], onDelete: Cascade)
+  searchQuery      String  @default("Vue")
+  maxApplies       Int     @default(1)
+  selectedResumeId String?
 }

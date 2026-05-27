@@ -5,6 +5,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import { createMessage } from '../openai'
 import { getBrowser, loadSession, randomDelay, randomScroll } from './browser.js'
+import { escapeHtml } from './ui.js'
 
 function waitForOtp(chatId: number): Promise<string> {
   return new Promise((resolve) => {
@@ -97,21 +98,63 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
     try {
       await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'domcontentloaded' })
       await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
-      const resumes = await page.$$eval(
-        '[data-qa^="resume-card-link-"]',
-        links => links.map((a) => {
-          const card = a.closest('[data-qa^="resume-card"]') ?? a.parentElement
-          const titleEl = card?.querySelector('[data-qa="cell-text-content"]')
-          return {
-            href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
-            title: titleEl?.textContent?.trim() ?? '(без названия)',
-          }
-        }),
-      )
+
+      const cardLinks = await page.$$('[data-qa^="resume-card-link-"]')
+
+      let items: ResumeListItem[]
+      if (cardLinks.length > 1) {
+        items = await page.$$eval(
+          '[data-qa^="resume-card-link-"]',
+          links => links.map((a) => {
+            const card = a.closest('[data-qa^="resume-card"]') ?? a.parentElement
+            const titleEl = card?.querySelector('[data-qa="resume-title"] h3') ?? card?.querySelector('[data-qa="title"]')
+            return {
+              href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
+              title: titleEl?.textContent?.trim() ?? '(без названия)',
+            }
+          }),
+        )
+      }
+      else {
+        const href = await cardLinks[0].getAttribute('href') ?? ''
+        const titleEl = await page.$('[data-qa="resume-title"] h3') ?? await page.$('[data-qa="title"]')
+        const title = (await titleEl?.innerText())?.trim() ?? '(без названия)'
+        items = [{ href, title }]
+      }
+
+      // Sync with DB
+      const hhIds = items.map(item => new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!)
+
+      // Delete resumes removed from hh.ru
+      await prisma.resume.deleteMany({ where: { telegramId: chatId, id: { notIn: hhIds } } })
+
+      // If selected resume was deleted — reset selection
+      const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+      if (settings?.selectedResumeId && !hhIds.includes(settings.selectedResumeId)) {
+        await prisma.settings.update({ where: { telegramId: chatId }, data: { selectedResumeId: null } })
+      }
+
+      // Fetch text and upsert each resume
+      for (const item of items) {
+        const id = new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!
+        const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
+        await page.goto(resumeUrl, { waitUntil: 'load' })
+        try {
+          const data = await page.locator('.resume').innerText()
+          await prisma.resume.upsert({
+            where: { id },
+            create: { data, id, telegramId: chatId, title: item.title },
+            update: { data, title: item.title },
+          })
+        }
+        catch (e) {
+          console.log(`Failed to fetch resume text for ${item.title}:`, e)
+        }
+      }
 
       await browser.close()
-      console.log(resumes)
-      return resumes
+      console.log(items)
+      return items
     }
     catch (e) {
       lastError = e as Error
@@ -124,39 +167,12 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   throw lastError!
 }
 
-export async function saveResume(chatId: number, resumeItem: ResumeListItem): Promise<string | undefined> {
-  const browser = await getBrowser()
-  const context = await browser.newContext()
-  const page = await context.newPage()
-  await loadSession(page, chatId)
-
-  const resumeHref = resumeItem.href
-  const title = resumeItem.title
-
-  const id = new URL(`https://hh.ru${resumeHref}`).pathname.split('/').pop()!
-  const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
-
-  await page.goto(resumeUrl, { waitUntil: 'load' })
-
-  let resume: string | undefined
-  try {
-    resume = await page.locator('.resume').innerText()
-    await prisma.resume.deleteMany({ where: { telegramId: chatId, NOT: { id } } })
-    await prisma.resume.upsert({
-      where: { id },
-      create: { data: resume, id, telegramId: chatId, title },
-      update: { data: resume, title },
-    })
-  }
-  catch (e) {
-    console.log(e)
-    await bot.sendMessage(chatId, 'Нет резюме на hh.ru, создайте')
-  }
-  finally {
-    await browser.close()
-  }
-
-  return resume
+export async function saveResume(chatId: number, resumeItem: ResumeListItem): Promise<void> {
+  const id = new URL(`https://hh.ru${resumeItem.href}`).pathname.split('/').pop()!
+  await prisma.settings.update({
+    where: { telegramId: chatId },
+    data: { selectedResumeId: id },
+  })
 }
 
 export async function applyToJobs(
@@ -192,7 +208,9 @@ export async function applyToJobs(
 
     await status(`✅ Вакансий найдено: ${vacancies.length}`)
 
-    const resume = await prisma.resume.findFirst({ where: { telegramId: chatId } })
+    const resumes = await prisma.resume.findMany({ where: { telegramId: chatId } })
+    const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+    const resume = resumes.find(r => r.id === settings?.selectedResumeId) ?? resumes[0]
     const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
 
     if (!resume?.data) {
@@ -219,6 +237,7 @@ export async function applyToJobs(
 
         await status(`✍️ Генерирую письмо: ${vacancy.title}`)
 
+        console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
         const letterPromise = createMessage(resume.data, description, user!.prompt)
 
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
@@ -232,60 +251,76 @@ export async function applyToJobs(
         await applyBtn.click()
         await page.waitForTimeout(randomDelay())
 
-        // Выбор резюме
-        const currentResumeEl = await page.$('[data-qa="resume-title"]')
-        const currentResumeTitle = (await currentResumeEl?.innerText())?.trim() ?? ''
-        console.log('Текущее резюме на странице:', currentResumeTitle)
-        console.log('Ожидаемое резюме из БД:', resume.title)
+        if (resumes.length > 1) {
+          // Выбор резюме
+          const currentResumeEl = await page.$('[data-qa="resume-title"]')
+          const currentResumeTitle = (await currentResumeEl?.innerText())?.trim() ?? ''
+          console.log('Текущее резюме на странице:', currentResumeTitle)
+          console.log('Ожидаемое резюме из БД:', resume.title)
 
-        if (currentResumeTitle !== resume.title) {
-          console.log('Резюме не совпадает, нужно сменить')
-          await currentResumeEl?.click()
-          await page.waitForSelector('[data-qa="magritte-select-option-list"]', { timeout: 5000 })
-          await page.pause()
-          const options = await page.$$('label[role="option"]')
-          for (const option of options) {
-            const titleEl = await option.$('[data-qa="resume-title"] [data-qa="cell-text-content"]')
-            const title = (await titleEl?.innerText())?.trim()
-            if (title === resume.title) {
-              await option.click()
-              await page.waitForTimeout(randomDelay())
-              break
+          if (currentResumeTitle !== resume.title) {
+            console.log('Резюме не совпадает, нужно сменить')
+            await currentResumeEl?.click()
+            await page.waitForSelector('[data-qa="magritte-select-option-list"]', { timeout: 5000 })
+            await page.pause()
+            const options = await page.$$('label[role="option"]')
+            for (const option of options) {
+              const titleEl = await option.$('[data-qa="resume-title"] [data-qa="cell-text-content"]')
+              const title = (await titleEl?.innerText())?.trim()
+              if (title === resume.title) {
+                await option.click()
+                await page.waitForTimeout(randomDelay())
+                break
+              }
             }
           }
-        }
-        await page.pause()
-
-        const addLetter = await page.$('[data-qa="add-cover-letter"]')
-
-        if (addLetter) {
-          await addLetter?.hover()
-          await addLetter?.click()
-        }
-
-        const letter = await letterPromise
-        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
-
-        if (letter) {
-          const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
-
-          await letterInput?.click()
-          await letterInput?.fill(letter)
           await page.pause()
-        }
 
-        const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
-        if (submitBtn) {
-          await submitBtn.click()
-          await page.waitForTimeout(randomDelay())
+          const addLetter = await page.$('[data-qa="add-cover-letter"]')
+
+          if (addLetter) {
+            await addLetter?.hover()
+            await addLetter?.click()
+          }
+
+          const letter = await letterPromise
+          await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
+
+          if (letter) {
+            const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
+
+            await letterInput?.click()
+            await letterInput?.fill(letter)
+            await page.pause()
+          }
+
+          const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
+          if (submitBtn) {
+            await submitBtn.click()
+            await page.waitForTimeout(randomDelay())
+          }
+          else {
+            const errMsg = 'Not found submit button'
+            console.log(errMsg)
+            results.errors.push({ ...ref, message: errMsg })
+          }
         }
         else {
-          const errMsg = 'Not found submit button'
-          console.log(errMsg)
-          results.errors.push({ ...ref, message: errMsg })
+          console.log('single flow')
+
+          const letter = await letterPromise
+          console.log('letter: ', letter)
+          await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
+
+          if (letter) {
+            const letterInput = await page.$('[data-qa="textarea-native-wrapper"] textarea')
+              ?? await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
+            await letterInput?.click()
+            await letterInput?.fill(letter)
+            await page.pause()
+          }
         }
 
-        await page.pause()
         results.applied.push(ref)
       }
       catch (err) {
