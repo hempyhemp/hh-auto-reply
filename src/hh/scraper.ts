@@ -30,7 +30,7 @@ export async function login(email: string, chatId: number): Promise<void> {
   const page = await context.newPage()
 
   await page.goto('https://hh.ru/account/login', { waitUntil: 'networkidle' })
-  await bot.sendMessage(chatId, `page: ${page.url()}`)
+  // await bot.sendMessage(chatId, `page: ${page.url()}`)
 
   await page.click('[data-qa="submit-button"]')
   await page.waitForTimeout(randomDelay())
@@ -88,18 +88,30 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   const context = await browser.newContext()
   const page = await context.newPage()
   await loadSession(page, chatId)
-  await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'networkidle' })
 
-  const resumes = await page.$$eval(
-    '[data-qa^="resume-card-link-"]',
-    links => links.map(a => ({
-      href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
-      title: a.textContent?.trim() ?? '(без названия)',
-    })),
-  )
+  let lastError: Error | null = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'networkidle' })
+      const resumes = await page.$$eval(
+        '[data-qa^="resume-card-link-"]',
+        links => links.map(a => ({
+          href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
+          title: a.textContent?.trim() ?? '(без названия)',
+        })),
+      )
+      await browser.close()
+      return resumes
+    }
+    catch (e) {
+      lastError = e as Error
+      if (attempt < 2)
+        await page.waitForTimeout(4000)
+    }
+  }
 
   await browser.close()
-  return resumes
+  throw lastError!
 }
 
 export async function saveResume(chatId: number, resumeHref: string): Promise<string | undefined> {
@@ -193,6 +205,23 @@ export async function applyToJobs(
 
         const letter = await createMessage(resume.data, description, user!.prompt)
         await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
+
+        // const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
+        // if (!applyBtn) {
+        //   results.skipped.push(vacancy.title)
+        //   continue
+        // }
+        //
+        // await randomScroll(page)
+        //
+        // await applyBtn.click()
+        // await page.waitForTimeout(randomDelay())
+        //
+        // const submitBtn = await page.$('[data-qa="vacancy-response-popup-submit"]')
+        // if (submitBtn) {
+        //   await submitBtn.click()
+        //   await page.waitForTimeout(randomDelay())
+        // }
 
         results.applied.push(ref)
       }

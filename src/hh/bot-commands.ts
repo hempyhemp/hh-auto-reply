@@ -75,31 +75,62 @@ async function sendResumeSelector(chatId: number, resumes: ResumeListItem[], mes
   })
 }
 
+async function resetMenuToBottom(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  if (state.menuMessageId) {
+    await bot.deleteMessage(chatId, state.menuMessageId).catch(() => {})
+    state.menuMessageId = null
+  }
+}
+
 async function doLogin(chatId: number, email: string): Promise<void> {
   await bot.sendMessage(chatId, '🔄 Логинюсь...')
   try {
     await login(email, chatId)
     await prisma.user.update({ where: { telegramId: chatId }, data: { hhEmail: email } })
 
-    const resumes = await listResumes(chatId)
     const state = getState(chatId)
 
-    if (resumes.length === 0) {
+    // listResumes может упасть по таймауту сразу после логина — это не критично
+    let resumes: ResumeListItem[] | null = null
+    try {
+      resumes = await listResumes(chatId)
+    }
+    catch {
+      await bot.sendMessage(chatId, '⚠️ Не удалось загрузить резюме — выбери вручную через меню')
+    }
+
+    await resetMenuToBottom(chatId)
+
+    if (resumes === null) {
+      // таймаут при загрузке резюме — просто показываем меню
+    }
+    else if (resumes.length === 0) {
       await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
     }
     else if (resumes.length === 1) {
       await saveResume(chatId, resumes[0].href)
       await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
     }
-    else if (state.menuMessageId) {
-      await sendResumeSelector(chatId, resumes, state.menuMessageId)
+    else {
+      // несколько резюме — отправляем новый селектор внизу
+      state.pendingResumes = resumes
+      const selectorMsg = await bot.sendMessage(chatId, '📄 Выбери резюме:', {
+        reply_markup: {
+          inline_keyboard: [
+            ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
+            [{ text: '◀️ Назад', callback_data: 'hh_back' }],
+          ],
+        },
+      })
+      state.menuMessageId = selectorMsg.message_id
       return
     }
 
-    await bot.sendMessage(chatId, '✅ Авторизован! Куки сохранены.')
     await showMenu(chatId)
   }
   catch (e) {
+    await resetMenuToBottom(chatId)
     await bot.sendMessage(chatId, `❌ Ошибка: ${(e as Error).message}`)
     await showMenu(chatId)
   }
