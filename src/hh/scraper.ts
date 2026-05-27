@@ -141,6 +141,7 @@ export async function saveResume(chatId: number, resumeItem: ResumeListItem): Pr
   let resume: string | undefined
   try {
     resume = await page.locator('.resume').innerText()
+    await prisma.resume.deleteMany({ where: { telegramId: chatId, NOT: { id } } })
     await prisma.resume.upsert({
       where: { id },
       create: { data: resume, id, telegramId: chatId, title },
@@ -238,10 +239,20 @@ export async function applyToJobs(
         console.log('Ожидаемое резюме из БД:', resume.title)
 
         if (currentResumeTitle !== resume.title) {
-          // TODO: добавить логику смены резюме
           console.log('Резюме не совпадает, нужно сменить')
-          currentResumeEl?.focus()
-          currentResumeEl?.click()
+          await currentResumeEl?.click()
+          await page.waitForSelector('[data-qa="magritte-select-option-list"]', { timeout: 5000 })
+          await page.pause()
+          const options = await page.$$('label[role="option"]')
+          for (const option of options) {
+            const titleEl = await option.$('[data-qa="resume-title"] [data-qa="cell-text-content"]')
+            const title = (await titleEl?.innerText())?.trim()
+            if (title === resume.title) {
+              await option.click()
+              await page.waitForTimeout(randomDelay())
+              break
+            }
+          }
         }
         await page.pause()
 
@@ -252,8 +263,8 @@ export async function applyToJobs(
           await addLetter?.click()
         }
 
-        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
         const letter = await letterPromise
+        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
 
         if (letter) {
           const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')

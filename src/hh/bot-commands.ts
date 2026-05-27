@@ -160,7 +160,7 @@ export function registerHHCommands() {
     const messageId = query.message.message_id
     const state = getState(chatId)
 
-    await bot.answerCallbackQuery(query.id)
+    await bot.answerCallbackQuery(query.id).catch(() => {})
 
     const user = await prisma.user.findUnique({
       where: { telegramId: chatId },
@@ -205,10 +205,14 @@ export function registerHHCommands() {
                 result.errors.forEach(v => lines.push(`• <a href="${v.href}">${v.title}</a> — ${v.message}`))
               }
 
-              await bot.sendMessage(chatId, lines.join('\n'), {
-                parse_mode: 'HTML',
-                disable_web_page_preview: true,
-              })
+              const fullText = lines.join('\n')
+              const LIMIT = 4000
+              for (let i = 0; i < fullText.length; i += LIMIT) {
+                await bot.sendMessage(chatId, fullText.slice(i, i + LIMIT), {
+                  parse_mode: 'HTML',
+                  disable_web_page_preview: true,
+                })
+              }
             }
             await showMenu(chatId)
           })
@@ -234,12 +238,12 @@ export function registerHHCommands() {
           await showResult(chatId, messageId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
           break
         }
-        const MAX = 10000
+        const MAX = 3500
         const text = resume.data.length > MAX
           ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
           : resume.data
         await bot.editMessageText(
-          `📋 <b>Твоё резюме</b>\n<pre>${escapeHtml(text)}</pre>`,
+          `📋 <b>Твоё резюме:</b>\n <b>${resume.title}</b>\n<pre>${escapeHtml(text)}</pre>`,
           {
             chat_id: chatId,
             message_id: messageId,
