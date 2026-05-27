@@ -4,7 +4,7 @@ import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import { createMessage } from '../openai'
-import { getBrowser, loadSession, randomDelay } from './browser.js'
+import { getBrowser, loadSession, randomDelay, randomScroll } from './browser.js'
 
 function waitForOtp(chatId: number): Promise<string> {
   return new Promise((resolve) => {
@@ -209,23 +209,50 @@ export async function applyToJobs(
         const letter = await createMessage(resume.data, description, user!.prompt)
         await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
 
-        // const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
-        // if (!applyBtn) {
-        //   results.skipped.push(vacancy.title)
-        //   continue
-        // }
-        //
-        // await randomScroll(page)
-        //
-        // await applyBtn.click()
-        // await page.waitForTimeout(randomDelay())
-        //
-        // const submitBtn = await page.$('[data-qa="vacancy-response-popup-submit"]')
-        // if (submitBtn) {
-        //   await submitBtn.click()
-        //   await page.waitForTimeout(randomDelay())
-        // }
+        const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
+        if (!applyBtn) {
+          results.skipped.push(vacancy)
+          continue
+        }
 
+        await randomScroll(page)
+
+        await applyBtn.click()
+        await page.waitForTimeout(randomDelay())
+
+        // Выбор реюзме
+        const currentResume = await page.$('[data-qa="resume-title"]')
+        console.log(currentResume?.textContent())
+        await page.pause()
+
+        const addLetter = await page.$('[data-qa="add-cover-letter"]')
+
+        if (addLetter) {
+          await page.pause()
+          await addLetter?.hover()
+          await addLetter?.click()
+        }
+
+        if (letter) {
+          const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
+
+          await letterInput?.click()
+          await letterInput?.fill(letter)
+          await page.pause()
+        }
+
+        const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
+        if (submitBtn) {
+          await submitBtn.click()
+          await page.waitForTimeout(randomDelay())
+        }
+        else {
+          const errMsg = 'Not found submit button'
+          console.log(errMsg)
+          results.errors.push({ ...ref, message: errMsg })
+        }
+
+        await page.pause()
         results.applied.push(ref)
       }
       catch (err) {
