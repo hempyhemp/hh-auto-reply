@@ -109,7 +109,7 @@ async function doLogin(chatId: number, email: string): Promise<void> {
       await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
     }
     else if (resumes.length === 1) {
-      await saveResume(chatId, resumes[0].href)
+      await saveResume(chatId, resumes[0])
       await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
     }
     else {
@@ -234,7 +234,7 @@ export function registerHHCommands() {
           await showResult(chatId, messageId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
           break
         }
-        const MAX = 3800
+        const MAX = 10000
         const text = resume.data.length > MAX
           ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
           : resume.data
@@ -341,7 +341,7 @@ export function registerHHCommands() {
             message_id: messageId,
             reply_markup: { inline_keyboard: [] },
           })
-          await saveResume(chatId, resumes[0].href)
+          await saveResume(chatId, resumes[0])
           await showResult(chatId, messageId, `✅ Резюме сохранено: ${resumes[0].title}`)
         }
         else {
@@ -364,7 +364,7 @@ export function registerHHCommands() {
             message_id: messageId,
             reply_markup: { inline_keyboard: [] },
           })
-          await saveResume(chatId, resume.href)
+          await saveResume(chatId, resume)
           state.pendingResumes = []
           await showResult(chatId, messageId, `✅ Резюме выбрано: ${resume.title}`)
         }

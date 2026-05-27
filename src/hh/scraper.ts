@@ -81,6 +81,9 @@ export async function checkIsAuth(telegramId: bigint | number) {
   catch {
     return null
   }
+  finally {
+    await browser.close()
+  }
 }
 
 export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
@@ -96,12 +99,18 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
       await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
       const resumes = await page.$$eval(
         '[data-qa^="resume-card-link-"]',
-        links => links.map(a => ({
-          href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
-          title: a.textContent?.trim() ?? '(без названия)',
-        })),
+        links => links.map((a) => {
+          const card = a.closest('[data-qa^="resume-card"]') ?? a.parentElement
+          const titleEl = card?.querySelector('[data-qa="cell-text-content"]')
+          return {
+            href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
+            title: titleEl?.textContent?.trim() ?? '(без названия)',
+          }
+        }),
       )
+
       await browser.close()
+      console.log(resumes)
       return resumes
     }
     catch (e) {
@@ -115,11 +124,14 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   throw lastError!
 }
 
-export async function saveResume(chatId: number, resumeHref: string): Promise<string | undefined> {
+export async function saveResume(chatId: number, resumeItem: ResumeListItem): Promise<string | undefined> {
   const browser = await getBrowser()
   const context = await browser.newContext()
   const page = await context.newPage()
   await loadSession(page, chatId)
+
+  const resumeHref = resumeItem.href
+  const title = resumeItem.title
 
   const id = new URL(`https://hh.ru${resumeHref}`).pathname.split('/').pop()!
   const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
@@ -131,8 +143,8 @@ export async function saveResume(chatId: number, resumeHref: string): Promise<st
     resume = await page.locator('.resume').innerText()
     await prisma.resume.upsert({
       where: { id },
-      create: { data: resume, id, telegramId: chatId },
-      update: { data: resume },
+      create: { data: resume, id, telegramId: chatId, title },
+      update: { data: resume, title },
     })
   }
   catch (e) {
@@ -206,8 +218,7 @@ export async function applyToJobs(
 
         await status(`✍️ Генерирую письмо: ${vacancy.title}`)
 
-        const letter = await createMessage(resume.data, description, user!.prompt)
-        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
+        const letterPromise = createMessage(resume.data, description, user!.prompt)
 
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
         if (!applyBtn) {
@@ -220,18 +231,29 @@ export async function applyToJobs(
         await applyBtn.click()
         await page.waitForTimeout(randomDelay())
 
-        // Выбор реюзме
-        const currentResume = await page.$('[data-qa="resume-title"]')
-        console.log(currentResume?.textContent())
+        // Выбор резюме
+        const currentResumeEl = await page.$('[data-qa="resume-title"]')
+        const currentResumeTitle = (await currentResumeEl?.innerText())?.trim() ?? ''
+        console.log('Текущее резюме на странице:', currentResumeTitle)
+        console.log('Ожидаемое резюме из БД:', resume.title)
+
+        if (currentResumeTitle !== resume.title) {
+          // TODO: добавить логику смены резюме
+          console.log('Резюме не совпадает, нужно сменить')
+          currentResumeEl?.focus()
+          currentResumeEl?.click()
+        }
         await page.pause()
 
         const addLetter = await page.$('[data-qa="add-cover-letter"]')
 
         if (addLetter) {
-          await page.pause()
           await addLetter?.hover()
           await addLetter?.click()
         }
+
+        await keep(`✅ <b>${vacancy.title}</b>\n\n${letter}`)
+        const letter = await letterPromise
 
         if (letter) {
           const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')

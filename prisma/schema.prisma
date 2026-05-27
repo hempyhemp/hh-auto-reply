@@ -31,6 +31,7 @@ model Resume {
   id         String @id
   user       User   @relation(references: [telegramId], fields: [telegramId], onDelete: Cascade)
   data       String
+  title      String @default("")
   telegramId BigInt
 }
 

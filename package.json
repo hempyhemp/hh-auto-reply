@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node --env-file=.env dist/index.js",
     "db-view": "yarn prisma studio",
-    "db-migrate": "npx prisma migrate dev --name init npx prisma generate ",
+    "db-migrate": "npx prisma migrate dev",
     "db-deploy": "npx prisma migrate deploy",
     "db-migrate-server": "git pull npx prisma migrate deploy",
     "lint": "eslint .",
