@@ -29,7 +29,7 @@ export async function login(email: string, chatId: number): Promise<void> {
   const context = await browser.newContext()
   const page = await context.newPage()
 
-  await page.goto('https://hh.ru/account/login', { waitUntil: 'networkidle' })
+  await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
   // await bot.sendMessage(chatId, `page: ${page.url()}`)
 
   await page.click('[data-qa="submit-button"]')
@@ -57,7 +57,7 @@ export async function login(email: string, chatId: number): Promise<void> {
   // await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
 
   await page.waitForTimeout(randomDelay())
-  await page.waitForLoadState('networkidle')
+  await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
 
   const cookies = await context.cookies()
   await prisma.user.update({
@@ -74,12 +74,12 @@ export async function checkIsAuth(telegramId: bigint | number) {
   const context = await browser.newContext()
   const page = await context.newPage()
   await loadSession(page, telegramId)
-  await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'networkidle' })
+  await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'domcontentloaded' })
   try {
-    return await page.$('[data-qa="profileAndResumes-button"]')
+    return await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 5000 })
   }
-  catch (e) {
-    return e
+  catch {
+    return null
   }
 }
 
@@ -92,7 +92,8 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   let lastError: Error | null = null
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'networkidle' })
+      await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'domcontentloaded' })
+      await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
       const resumes = await page.$$eval(
         '[data-qa^="resume-card-link-"]',
         links => links.map(a => ({
@@ -123,7 +124,7 @@ export async function saveResume(chatId: number, resumeHref: string): Promise<st
   const id = new URL(`https://hh.ru${resumeHref}`).pathname.split('/').pop()!
   const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
 
-  await page.goto(resumeUrl, { waitUntil: 'networkidle' })
+  await page.goto(resumeUrl, { waitUntil: 'load' })
 
   let resume: string | undefined
   try {
@@ -159,7 +160,8 @@ export async function applyToJobs(
     await loadSession(page, chatId)
 
     const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&area=${area}`
-    await page.goto(url, { waitUntil: 'networkidle' })
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('[data-qa="serp-item__title"]', { timeout: 10000 }).catch(() => null)
 
     if (!await page.$('[data-qa="profileAndResumes-button"]')) {
       return { ...results, error: 'Не авторизован. Выполните login' }
@@ -189,7 +191,8 @@ export async function applyToJobs(
       const ref: VacancyRef = { title: vacancy.title, href: vacancy.href }
       try {
         await status(`🔄 Обрабатывается: ${vacancy.title}`)
-        await page.goto(vacancy.href, { waitUntil: 'networkidle' })
+        await page.goto(vacancy.href, { waitUntil: 'domcontentloaded' })
+        await page.waitForSelector('[data-qa="vacancy-description"]', { timeout: 10000 }).catch(() => null)
 
         const description = await page
           .locator('[data-qa="vacancy-description"]')

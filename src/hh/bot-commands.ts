@@ -1,8 +1,8 @@
+import type { ResumeListItem } from './types.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
 import { applyToJobs, checkIsAuth, listResumes, login, saveResume } from './scraper.js'
-import { type ResumeListItem } from './types.js'
 import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, showResult } from './ui.js'
 
 interface UserState {
@@ -220,7 +220,7 @@ export function registerHHCommands() {
         await showResult(
           chatId,
           messageId,
-          `⚙️ Настройки:\n\nЗапрос: ${settings.searchQuery}\nМакс откликов: ${settings.maxApplies}\nАвто: ${state.autoCron ? '✅ включено' : '❌ выключено'}\nАвторизован: ${isAuth}`,
+          `⚙️ Настройки:\n\nЗапрос: ${settings.searchQuery}\nМакс откликов: ${settings.maxApplies}\nАвто: ${state.autoCron ? '✅ включено' : '❌ выключено'}\nАвторизован: ${isAuth ? '✅' : '❌'}`,
         )
         break
       }
@@ -289,10 +289,18 @@ export function registerHHCommands() {
       }
 
       case 'hh_query':
+      {
         state.awaitingQuery = true
         state.menuMessageId = messageId
+
+        const q = await prisma.settings.findFirst({
+          where: { telegramId: chatId },
+        })
+
+        await bot.sendMessage(chatId, `🔍Текущий запрос: ${q?.searchQuery || '--'}`)
         await bot.sendMessage(chatId, '🔍 Введи поисковый запрос:')
         break
+      }
 
       case 'hh_max':
         state.awaitingMax = true
