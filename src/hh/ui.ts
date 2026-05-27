@@ -19,6 +19,7 @@ export const MAIN_MARKUP = {
       { text: '📄 Выбрать резюме', callback_data: 'hh_resume_list' },
       { text: '📋 Моё резюме', callback_data: 'hh_my_resume' },
     ],
+    [{ text: '🚫 Проблемные вакансии', callback_data: 'hh_skipped' }],
   ],
 }
 

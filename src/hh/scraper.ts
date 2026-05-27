@@ -218,8 +218,21 @@ export async function applyToJobs(
       return results
     }
 
-    for (const vacancy of vacancies.slice(0, maxApplies)) {
+    const knownSkipped = new Set(
+      (await prisma.skippedVacancy.findMany({ where: { telegramId: chatId }, select: { href: true } }))
+        .map(v => v.href),
+    )
+
+    let appliedCount = 0
+    for (const vacancy of vacancies) {
+      if (appliedCount >= maxApplies)
+        break
       const ref: VacancyRef = { title: vacancy.title, href: vacancy.href }
+
+      if (knownSkipped.has(vacancy.href)) {
+        continue
+      }
+
       try {
         await status(`🔄 Обрабатывается: ${vacancy.title}`)
         await page.goto(vacancy.href, { waitUntil: 'domcontentloaded' })
@@ -249,7 +262,20 @@ export async function applyToJobs(
         await randomScroll(page)
 
         await applyBtn.click()
+        await page.waitForLoadState('domcontentloaded').catch(() => {})
         await page.waitForTimeout(randomDelay())
+
+        const hasQuestionnaire = await page.$('[data-qa="employer-asking-for-test"]').catch(() => null)
+        if (hasQuestionnaire) {
+          console.log(`[x] ${vacancy.title} hasQuestionnaire`)
+          await prisma.skippedVacancy.upsert({
+            where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
+            create: { telegramId: chatId, href: vacancy.href, title: vacancy.title },
+            update: {},
+          })
+          results.skipped.push(ref)
+          continue
+        }
 
         if (resumes.length > 1) {
           // Выбор резюме
@@ -284,15 +310,20 @@ export async function applyToJobs(
           }
 
           const letter = await letterPromise
-          await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
 
           if (letter) {
+            await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
             const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
 
             await letterInput?.click()
             await letterInput?.fill(letter)
             await page.pause()
           }
+          else {
+            await keep(`Письмо не сгенерировано, ошибка`)
+          }
+
+          await page.waitForTimeout(randomDelay())
 
           const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
           if (submitBtn) {
@@ -303,6 +334,8 @@ export async function applyToJobs(
             const errMsg = 'Not found submit button'
             console.log(errMsg)
             results.errors.push({ ...ref, message: errMsg })
+            // results.skipped.push(vacancy)
+            continue
           }
         }
         else {
@@ -310,18 +343,32 @@ export async function applyToJobs(
 
           const letter = await letterPromise
           console.log('letter: ', letter)
-          await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
 
           if (letter) {
+            await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
             const letterInput = await page.$('[data-qa="textarea-native-wrapper"] textarea')
               ?? await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
             await letterInput?.click()
             await letterInput?.fill(letter)
             await page.pause()
           }
+
+          await page.waitForTimeout(randomDelay())
+
+          const submitBtn = await page.$('[data-qa="vacancy-response-letter-submit"]') ?? await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
+          if (submitBtn) {
+            await submitBtn.click()
+            await page.waitForTimeout(randomDelay())
+          }
+          else {
+            const errMsg = 'Not found submit button'
+            console.log(errMsg)
+            results.errors.push({ ...ref, message: errMsg })
+          }
         }
 
         results.applied.push(ref)
+        appliedCount++
       }
       catch (err) {
         results.errors.push({ ...ref, message: (err as Error).message })

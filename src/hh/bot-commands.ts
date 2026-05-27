@@ -328,6 +328,28 @@ export function registerHHCommands() {
         await showResult(chatId, messageId, '⛔ Авто остановлен')
         break
 
+      case 'hh_skipped': {
+        const skipped = await prisma.skippedVacancy.findMany({
+          where: { telegramId: chatId },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        })
+        if (!skipped.length) {
+          await showResult(chatId, messageId, '✅ Проблемных вакансий нет')
+          break
+        }
+        const lines = ['🚫 <b>Вакансии с опросником (бот не может откликнуться):</b>', '']
+        skipped.forEach(v => lines.push(`• <a href="${escapeHtml(v.href)}">${escapeHtml(v.title)}</a>`))
+        await bot.editMessageText(lines.join('\n'), {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: BACK_MARKUP,
+        })
+        break
+      }
+
       case 'hh_resume_list': {
         await bot.editMessageText('🔄 Загружаю список резюме...', {
           chat_id: chatId,

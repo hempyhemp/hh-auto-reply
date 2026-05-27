@@ -42,3 +42,13 @@ model Settings {
   maxApplies       Int     @default(1)
   selectedResumeId String?
 }
+
+model SkippedVacancy {
+  id         Int      @id @default(autoincrement())
+  telegramId BigInt
+  href       String
+  title      String
+  createdAt  DateTime @default(now())
+
+  @@unique([telegramId, href])
+}
