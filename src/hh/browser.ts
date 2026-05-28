@@ -31,7 +31,7 @@ export async function getBrowser(): Promise<Browser> {
 export async function newStealthContext(browser: Browser) {
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: 1920, height: 1080 },
     locale: 'ru-RU',
     timezoneId: 'Europe/Moscow',
   })
