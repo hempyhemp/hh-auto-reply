@@ -85,7 +85,7 @@ export async function askLLM(userMessage: string) {
 export async function createMessage(resume: string, message: string, prompt?: string) {
   const client = await getClient()
 
-  console.log('[createMessage] client.instance: ', client.instance)
+  console.log('[createMessage] client.instance: ', !!client.instance)
   const session = await client.session.create({ body: { title: 'Cover letter' } })
   const sessionId = session.data!.id
 
