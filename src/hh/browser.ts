@@ -1,3 +1,4 @@
+import process from 'node:process'
 import prisma from '@prisma'
 import { type Browser, chromium, type Page } from 'playwright'
 
@@ -15,7 +16,7 @@ export async function randomScroll(page: Page): Promise<void> {
 }
 
 export async function getBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: false })
+  return chromium.launch({ headless: !!(process.env?.debug ?? true) })
 }
 
 export async function loadSession(page: Page, telegramId: bigint | number): Promise<boolean> {
