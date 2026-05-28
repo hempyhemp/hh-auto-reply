@@ -13,6 +13,9 @@ RUN corepack enable
 
 RUN yarn install --immutable
 
+# install Chromium + all system dependencies for Playwright
+RUN npx playwright install --with-deps chromium
+
 COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
@@ -23,15 +26,12 @@ RUN yarn prisma generate
 FROM node:22-slim AS runner
 
 WORKDIR /app
-RUN corepack enable
+RUN corepack enable && npm install -g opencode-ai
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package.json yarn.lock .yarnrc.yml tsconfig.json ./
-
-# install Chromium + all system dependencies for Playwright
-RUN npx playwright install --with-deps chromium
 
 # SQLite data lives on a volume so it survives container restarts
 RUN mkdir -p /data
