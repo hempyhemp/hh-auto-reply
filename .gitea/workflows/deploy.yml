@@ -14,12 +14,6 @@ jobs:
         run: |
           ssh-keyscan git.koptilnya.xyz >> ~/.ssh/known_hosts
 
-      - name: Set up secret file
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | sed 's/./& /g'
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -31,7 +25,7 @@ jobs:
       #        run: cp /home/koptilnya/services/chad/data/database.db /home/koptilnya/services/chad/database-$(date+"%d-%m-%Y").db
 
       - name: Build
-        run: docker build -t hh-auto-reply ./server
+        run: docker build -t hh-auto-reply
 
       - name: Stop old container
         run: docker rm -f hh-auto-reply || true
