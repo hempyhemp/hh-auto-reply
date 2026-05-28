@@ -10,6 +10,7 @@ interface UserState {
   awaitingEmail: boolean
   awaitingQuery: boolean
   awaitingMax: boolean
+  awaitingPrompt: boolean
   pendingResumes: ResumeListItem[]
   loginPromptMessageId: number | null
 }
@@ -20,6 +21,7 @@ function makeUserState(): UserState {
     awaitingEmail: false,
     awaitingQuery: false,
     awaitingMax: false,
+    awaitingPrompt: false,
     pendingResumes: [],
     loginPromptMessageId: null,
   }
@@ -84,7 +86,7 @@ async function handleApply(chatId: number): Promise<void> {
     return
 
   const reporter = createStatusReporter(chatId)
-  await reporter.status(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`)
+  await reporter.keep(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`)
 
   applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId, reporter })
     .then(async (result) => {
@@ -375,6 +377,17 @@ export function registerHHCommands() {
       return
     }
 
+    if (state.awaitingPrompt) {
+      state.awaitingPrompt = false
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      await prisma.user.update({
+        where: { telegramId: chatId },
+        data: { prompt: msg.text },
+      })
+      await bot.sendMessage(chatId, '✅ Промт сохранён')
+      return
+    }
+
     switch (msg.text) {
       case BTN.APPLY:
         await handleApply(chatId)
@@ -424,6 +437,14 @@ export function registerHHCommands() {
       case BTN.BACK:
         await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD })
         break
+
+      case BTN.PROMPT: {
+        state.awaitingPrompt = true
+        const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+        const current = user?.prompt ? `\n\nТекущий:\n<pre>${escapeHtml(user.prompt)}</pre>` : ''
+        await bot.sendMessage(chatId, `📝 Введи новый промт для AI:${current}`, { parse_mode: 'HTML' })
+        break
+      }
 
       case BTN.LOGIN:
         await handleLogin(chatId)

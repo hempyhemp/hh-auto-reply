@@ -1,6 +1,47 @@
 import process from 'node:process'
 import prisma from '@prisma'
 import { type Browser, chromium, type Page } from 'playwright'
+import { config } from '@/config.js'
+
+class Semaphore {
+  private running = 0
+  private readonly queue: Array<() => void> = []
+
+  constructor(private readonly max: number) {}
+
+  private acquire(): Promise<void> {
+    if (this.running < this.max) {
+      this.running++
+      return Promise.resolve()
+    }
+    return new Promise(resolve => this.queue.push(resolve))
+  }
+
+  private release(): void {
+    this.running--
+    const next = this.queue.shift()
+    if (next) {
+      this.running++
+      next()
+    }
+  }
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire()
+    try {
+      return await fn()
+    }
+    finally {
+      this.release()
+    }
+  }
+
+  get stats() {
+    return { running: this.running, queued: this.queue.length, max: this.max }
+  }
+}
+
+export const browserQueue = new Semaphore(config.maxConcurrentBrowsers)
 
 export function randomDelay(min = 300, max = 2000): number {
   return min + Math.random() * (max - min)
@@ -47,4 +88,16 @@ export async function loadSession(page: Page, telegramId: bigint | number): Prom
     return false
   await page.context().addCookies(JSON.parse(user.session))
   return true
+}
+
+export async function withBrowser<T>(fn: (browser: Browser) => Promise<T>): Promise<T> {
+  return browserQueue.run(async () => {
+    const browser = await getBrowser()
+    try {
+      return await fn(browser)
+    }
+    finally {
+      await browser.close()
+    }
+  })
 }

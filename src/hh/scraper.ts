@@ -5,8 +5,8 @@ import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import { createMessage } from '@/openai'
-import { getBrowser, loadSession, newStealthContext, randomDelay, randomScroll } from './browser.js'
-import { escapeHtml } from './ui.js'
+import { loadSession, newStealthContext, randomDelay, randomScroll, withBrowser } from './browser.js'
+import { createStatusReporter, escapeHtml } from './ui.js'
 
 export class NoResumeError extends Error {
   constructor() {
@@ -49,7 +49,8 @@ async function skipIfQuestionnaire(
   const hasQuestionnaire = await page.$('[data-qa="employer-asking-for-test"], [data-qa="task-body"]')
   if (!hasQuestionnaire)
     return false
-  await status(`Пропущена вакансия: ${vacancy.title}`)
+  const { keep } = createStatusReporter(chatId)
+  await keep(`Пропущена вакансия: ${vacancy.title}`)
   console.log(`[x] ${vacancy.title} hasQuestionnaire`)
   await prisma.skippedVacancy.upsert({
     where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
@@ -61,34 +62,27 @@ async function skipIfQuestionnaire(
 }
 
 export async function login(email: string, chatId: number): Promise<void> {
-  const browser = await getBrowser()
-  // await bot.sendMessage(chatId, `Browser is connected: ${browser.isConnected()}`)
-  if (!browser.version()) {
-    console.log('browser error')
-    return
-  }
+  await withBrowser(async (browser) => {
+    if (!browser.version()) {
+      console.log('browser error')
+      return
+    }
 
-  try {
     const context = await newStealthContext(browser)
     const page = await context.newPage()
 
     await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
-    // await bot.sendMessage(chatId, `page: ${page.url()}`)
 
     await page.click('[data-qa="submit-button"]')
     await page.waitForTimeout(randomDelay())
-    // await bot.sendMessage(chatId, `Клик по "Войти"`)
 
     await page.click('label:has([data-qa="credential-type-EMAIL"])')
     await page.waitForTimeout(randomDelay())
-    // await bot.sendMessage(chatId, `Клик по "Email"`)
 
     await page.fill('[data-qa="applicant-login-input-email"]', email)
     await page.waitForTimeout(randomDelay())
-    // await bot.sendMessage(chatId, `Ввод "Email"`)
 
     await page.click('[data-qa="submit-button"]')
-    // await bot.sendMessage(chatId, `Клик по "Дальше"`)
     await page.waitForTimeout(randomDelay())
 
     await bot.sendMessage(chatId, '🔑 Введи код из email')
@@ -97,7 +91,6 @@ export async function login(email: string, chatId: number): Promise<void> {
     await page.click('[data-qa="applicant-login-input-otp"]')
     const otp = await waitForOtp(chatId)
     await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
-    // await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
 
     await page.waitForTimeout(randomDelay())
     await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
@@ -109,119 +102,109 @@ export async function login(email: string, chatId: number): Promise<void> {
     })
 
     await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
-  }
-  finally {
-    await browser.close()
-  }
+  })
 }
 
 export async function checkIsAuth(telegramId: bigint | number) {
-  const browser = await getBrowser()
-  const context = await newStealthContext(browser)
-  const page = await context.newPage()
-  await loadSession(page, telegramId)
-  await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'domcontentloaded' })
-  try {
-    return await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 5000 })
-  }
-  catch {
-    return null
-  }
-  finally {
-    await browser.close()
-  }
+  return withBrowser(async (browser) => {
+    const context = await newStealthContext(browser)
+    const page = await context.newPage()
+    await loadSession(page, telegramId)
+    await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'domcontentloaded' })
+    try {
+      return await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 5000 })
+    }
+    catch {
+      return null
+    }
+  })
 }
 
 export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
-  const browser = await getBrowser()
-  const context = await newStealthContext(browser)
-  const page = await context.newPage()
-  await loadSession(page, chatId)
+  return withBrowser(async (browser) => {
+    const context = await newStealthContext(browser)
+    const page = await context.newPage()
+    await loadSession(page, chatId)
 
-  let lastError: Error | null = null
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'domcontentloaded' })
-      const finalUrl = page.url()
-      if (finalUrl.includes('/profile/resume/professional_role')) {
-        throw new NoResumeError()
-      }
-      if (!finalUrl.includes('/applicant/resumes')) {
-        throw new Error(`Session expired or redirected: ${finalUrl}`)
-      }
-      await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
-
-      const cardLinks = await page.$$('[data-qa^="resume-card-link-"]')
-
-      let items: ResumeListItem[]
-      if (cardLinks.length > 1) {
-        items = await page.$$eval(
-          '[data-qa^="resume-card-link-"]',
-          links => links.map((a) => {
-            const card = a.parentElement
-            const titleEl = card?.querySelector('[data-qa="resume-title"]') ?? card?.querySelector('[data-qa="title"]')
-            console.log(titleEl)
-            return {
-              href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
-              title: titleEl?.innerText?.trim() ?? '(Ошибка в получении названия)',
-            }
-          }),
-        )
-
-        console.log(items.length)
-      }
-      else {
-        const href = await cardLinks[0].getAttribute('href') ?? ''
-        const titleEl = await page.$('[data-qa="resume-title"] h3') ?? await page.$('[data-qa="title"]')
-        const title = (await titleEl?.innerText())?.trim() ?? '(без названия)'
-        items = [{ href, title }]
-      }
-
-      // Sync with DB
-      const hhIds = items.map(item => new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!)
-
-      // Delete resumes removed from hh.ru
-      await prisma.resume.deleteMany({ where: { telegramId: chatId, id: { notIn: hhIds } } })
-
-      // If selected resume was deleted — reset selection
-      const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
-      if (settings?.selectedResumeId && !hhIds.includes(settings.selectedResumeId)) {
-        await prisma.settings.update({ where: { telegramId: chatId }, data: { selectedResumeId: null } })
-      }
-
-      // Fetch text and upsert each resume
-      for (const item of items) {
-        const id = new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!
-        const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
-        await page.goto(resumeUrl, { waitUntil: 'load' })
-        try {
-          const data = await page.locator('.resume').innerText()
-          await prisma.resume.upsert({
-            where: { id },
-            create: { data, id, telegramId: chatId, title: item.title },
-            update: { data, title: item.title },
-          })
+    let lastError: Error | null = null
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'domcontentloaded' })
+        const finalUrl = page.url()
+        if (finalUrl.includes('/profile/resume/professional_role')) {
+          throw new NoResumeError()
         }
-        catch (e) {
-          console.log(`Failed to fetch resume text for ${item.title}:`, e)
+        if (!finalUrl.includes('/applicant/resumes')) {
+          throw new Error(`Session expired or redirected: ${finalUrl}`)
         }
+        await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
+
+        const cardLinks = await page.$$('[data-qa^="resume-card-link-"]')
+
+        let items: ResumeListItem[]
+        if (cardLinks.length > 1) {
+          items = await page.$$eval(
+            '[data-qa^="resume-card-link-"]',
+            links => links.map((a) => {
+              const card = a.parentElement
+              const titleEl = card?.querySelector('[data-qa="resume-title"]') ?? card?.querySelector('[data-qa="title"]')
+              // console.log(titleEl)
+              return {
+                href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
+                title: titleEl?.innerText?.trim() ?? '(Ошибка в получении названия)',
+              }
+            }),
+          )
+
+          console.log(items.length)
+        }
+        else {
+          const href = await cardLinks[0].getAttribute('href') ?? ''
+          const titleEl = await page.$('[data-qa="resume-title"] h3') ?? await page.$('[data-qa="title"]')
+          const title = (await titleEl?.innerText())?.trim() ?? '(без названия)'
+          items = [{ href, title }]
+        }
+
+        const hhIds = items.map(item => new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!)
+
+        await prisma.resume.deleteMany({ where: { telegramId: chatId, id: { notIn: hhIds } } })
+
+        const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+        if (settings?.selectedResumeId && !hhIds.includes(settings.selectedResumeId)) {
+          await prisma.settings.update({ where: { telegramId: chatId }, data: { selectedResumeId: null } })
+        }
+
+        for (const item of items) {
+          const id = new URL(`https://hh.ru${item.href}`).pathname.split('/').pop()!
+          const resumeUrl = `https://hh.ru/resume_converter/resume.txt?hash=${id}&type=txt&hhtmFrom=&hhtmSource=resume`
+          await page.goto(resumeUrl, { waitUntil: 'load' })
+          try {
+            const data = await page.locator('.resume').innerText()
+            await prisma.resume.upsert({
+              where: { id },
+              create: { data, id, telegramId: chatId, title: item.title },
+              update: { data, title: item.title },
+            })
+          }
+          catch (e) {
+            console.log(`Failed to fetch resume text for ${item.title}:`, e)
+          }
+        }
+
+        console.log(items)
+        return items
       }
-
-      await browser.close()
-      console.log(items)
-      return items
+      catch (e) {
+        if (e instanceof NoResumeError)
+          throw e
+        lastError = e as Error
+        if (attempt < 2)
+          await page.waitForTimeout(4000)
+      }
     }
-    catch (e) {
-      if (e instanceof NoResumeError)
-        throw e
-      lastError = e as Error
-      if (attempt < 2)
-        await page.waitForTimeout(4000)
-    }
-  }
 
-  await browser.close()
-  throw lastError!
+    throw lastError!
+  })
 }
 
 export async function saveResume(chatId: number, resumeItem: ResumeListItem): Promise<void> {
@@ -236,13 +219,12 @@ export async function applyToJobs(
   { query, area = 1, maxApplies = 10 }: ApplyOptions,
   { chatId, reporter }: { chatId: number, reporter: StatusReporter },
 ): Promise<ApplyResult> {
-  const browser = await getBrowser()
-  const context = await newStealthContext(browser)
-  const page = await context.newPage()
-  const results: ApplyResult = { applied: [], skipped: [], errors: [] }
-  const { status, keep, clear } = reporter
+  return withBrowser(async (browser) => {
+    const context = await newStealthContext(browser)
+    const page = await context.newPage()
+    const results: ApplyResult = { applied: [], skipped: [], errors: [] }
+    const { status, keep, clear } = reporter
 
-  try {
     await loadSession(page, chatId)
 
     const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&area=${area}`
@@ -263,7 +245,7 @@ export async function applyToJobs(
       })),
     )
 
-    await status(`✅ Вакансий найдено: ${vacancies.length}`)
+    await keep(`✅ Вакансий найдено: ${vacancies.length}`)
 
     const resumes = await prisma.resume.findMany({ where: { telegramId: chatId } })
     const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
@@ -291,7 +273,7 @@ export async function applyToJobs(
       }
 
       try {
-        await status(`🔄 Обрабатывается: ${vacancy.title}`)
+        await keep(`🔄 Обрабатывается: ${vacancy.title}`)
         await page.goto(vacancy.href, { waitUntil: 'domcontentloaded' })
         await page.waitForSelector('[data-qa="vacancy-description"]', { timeout: 10000 }).catch(() => null)
 
@@ -319,7 +301,7 @@ export async function applyToJobs(
           continue
 
         // console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
-        await status(`✍️ Генерирую письмо: ${vacancy.title}`)
+        await keep(`✍️ Генерирую письмо: ${vacancy.title}`)
         const letterPromise = Promise.race([
           createMessage(resume.data, description, user!.prompt),
           new Promise<null>((_, reject) =>
@@ -436,11 +418,8 @@ export async function applyToJobs(
       }
     }
 
-    await clear()
-  }
-  finally {
-    await browser.close()
-  }
+    // await clear()
 
-  return results
+    return results
+  })
 }

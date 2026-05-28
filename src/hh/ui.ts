@@ -13,6 +13,7 @@ export const BTN = {
   SETTINGS: '⚙️ Настройки',
   INFO: 'ℹ️ Информация',
   BACK: '◀️ Назад',
+  PROMPT: '📝 Промт',
 } as const
 
 export const LOGIN_REPLY_KEYBOARD = {
@@ -34,7 +35,7 @@ export const SETTINGS_REPLY_KEYBOARD = {
   keyboard: [
     [{ text: BTN.MAX }, { text: BTN.QUERY }],
     [{ text: BTN.AUTO_TOGGLE }, { text: BTN.RESUME_LIST }],
-    [{ text: BTN.LOGIN }],
+    [{ text: BTN.PROMPT }, { text: BTN.LOGIN }],
     [{ text: BTN.BACK }],
   ],
   resize_keyboard: true,
