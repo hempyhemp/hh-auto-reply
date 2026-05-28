@@ -1,32 +1,34 @@
 import bot from '@bot'
 
-export const MAIN_MARKUP = {
-  inline_keyboard: [
-    [{ text: '🚀 Откликнуться сейчас', callback_data: 'hh_apply' }],
-    [
-      { text: '🔍 Изменить запрос', callback_data: 'hh_query' },
-      { text: '🔢 Макс откликов', callback_data: 'hh_max' },
-    ],
-    [
-      { text: '⏰ Авто вкл', callback_data: 'hh_auto_start' },
-      { text: '⛔ Авто выкл', callback_data: 'hh_auto_stop' },
-    ],
-    [
-      { text: '🔑 Логин', callback_data: 'hh_login' },
-      { text: '⚙️ Статус', callback_data: 'hh_status' },
-    ],
-    [
-      { text: '📄 Выбрать резюме', callback_data: 'hh_resume_list' },
-      { text: '📋 Моё резюме', callback_data: 'hh_my_resume' },
-    ],
-    [{ text: '🚫 Проблемные вакансии', callback_data: 'hh_skipped' }],
-  ],
+export const BTN = {
+  APPLY: '🚀 Откликнуться',
+  STATUS: '⚙️ Статус',
+  QUERY: '🔍 Изменить запрос',
+  MAX: '🔢 Макс откликов',
+  AUTO_ON: '⏰ Авто вкл',
+  AUTO_OFF: '⛔ Авто выкл',
+  LOGIN: '🔑 Войти на hh.ru',
+  RESUME_LIST: '📄 Выбрать резюме',
+  MY_RESUME: '📋 Моё резюме',
+  SKIPPED: '🚫 Проблемные',
+} as const
+
+export const LOGIN_REPLY_KEYBOARD = {
+  keyboard: [[{ text: BTN.LOGIN }]],
+  resize_keyboard: true,
+  persistent: true,
 }
 
-export const LOGIN_MARKUP = {
-  inline_keyboard: [
-    [{ text: '🔑 Войти через hh.ru', callback_data: 'hh_login' }],
+export const MAIN_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: BTN.APPLY }, { text: BTN.STATUS }],
+    [{ text: BTN.QUERY }, { text: BTN.MAX }],
+    [{ text: BTN.AUTO_ON }, { text: BTN.AUTO_OFF }],
+    [{ text: BTN.LOGIN }, { text: BTN.RESUME_LIST }],
+    [{ text: BTN.MY_RESUME }, { text: BTN.SKIPPED }],
   ],
+  resize_keyboard: true,
+  persistent: true,
 }
 
 export const BACK_MARKUP = {
@@ -58,22 +60,14 @@ export async function safeEdit(
   })
 }
 
-export async function showResult(chatId: number, messageId: number, text: string): Promise<void> {
-  await safeEdit(text, {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: BACK_MARKUP,
-  })
-}
-
 export interface StatusReporter {
   status: (text: string) => Promise<void>
   keep: (text: string) => Promise<void>
   clear: () => Promise<void>
 }
 
-export function createStatusReporter(chatId: number, initialMsgId?: number | null): StatusReporter {
-  let msgId: number | null = initialMsgId ?? null
+export function createStatusReporter(chatId: number): StatusReporter {
+  let msgId: number | null = null
 
   async function deleteCurrent(): Promise<void> {
     if (msgId) {

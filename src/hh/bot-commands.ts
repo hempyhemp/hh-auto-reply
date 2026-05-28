@@ -3,16 +3,14 @@ import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
 import { applyToJobs, checkIsAuth, listResumes, login, NoResumeError, saveResume } from './scraper.js'
-import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, NO_RESUME_MARKUP, safeEdit, showResult } from './ui.js'
+import { BACK_MARKUP, BTN, createStatusReporter, escapeHtml, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, NO_RESUME_MARKUP, safeEdit } from './ui.js'
 
 interface UserState {
   autoCron: ScheduledTask | null
   awaitingEmail: boolean
   awaitingQuery: boolean
   awaitingMax: boolean
-  tempEmail: string
   pendingResumes: ResumeListItem[]
-  menuMessageId: number | null
   loginPromptMessageId: number | null
 }
 
@@ -22,9 +20,7 @@ function makeUserState(): UserState {
     awaitingEmail: false,
     awaitingQuery: false,
     awaitingMax: false,
-    tempEmail: '',
     pendingResumes: [],
-    menuMessageId: null,
     loginPromptMessageId: null,
   }
 }
@@ -37,52 +33,6 @@ function getState(chatId: number): UserState {
   return states.get(chatId)!
 }
 
-async function showMenu(chatId: number, messageId?: number | null): Promise<void> {
-  const state = getState(chatId)
-  const targetId = messageId ?? state.menuMessageId
-
-  if (targetId) {
-    try {
-      await safeEdit('🤖 HH Auto-Apply', {
-        chat_id: chatId,
-        message_id: targetId,
-        reply_markup: MAIN_MARKUP,
-      })
-      state.menuMessageId = targetId
-      return
-    }
-    catch {
-      // Сообщение устарело или недоступно — отправим новое
-    }
-  }
-
-  const msg = await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_MARKUP })
-  state.menuMessageId = msg.message_id
-}
-
-async function sendResumeSelector(chatId: number, resumes: ResumeListItem[], messageId: number): Promise<void> {
-  const state = getState(chatId)
-  state.pendingResumes = resumes
-  await safeEdit('📄 Выбери резюме:', {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: {
-      inline_keyboard: [
-        ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
-        [{ text: '◀️ Назад', callback_data: 'hh_back' }],
-      ],
-    },
-  })
-}
-
-async function resetMenuToBottom(chatId: number): Promise<void> {
-  const state = getState(chatId)
-  if (state.menuMessageId) {
-    await bot.deleteMessage(chatId, state.menuMessageId).catch(() => {})
-    state.menuMessageId = null
-  }
-}
-
 async function doLogin(chatId: number, email: string): Promise<void> {
   await bot.sendMessage(chatId, '🔄 Логинюсь...')
   try {
@@ -91,7 +41,6 @@ async function doLogin(chatId: number, email: string): Promise<void> {
 
     const state = getState(chatId)
 
-    // listResumes может упасть по таймауту сразу после логина — это не критично
     let resumes: ResumeListItem[] | null = null
     try {
       resumes = await listResumes(chatId)
@@ -100,10 +49,10 @@ async function doLogin(chatId: number, email: string): Promise<void> {
       await bot.sendMessage(chatId, '⚠️ Не удалось загрузить резюме — выбери вручную через меню')
     }
 
-    await resetMenuToBottom(chatId)
+    await bot.sendMessage(chatId, '✅ Вход выполнен!', { reply_markup: MAIN_REPLY_KEYBOARD })
 
     if (resumes === null) {
-      // таймаут при загрузке резюме — просто показываем меню
+      // таймаут при загрузке резюме
     }
     else if (resumes.length === 0) {
       await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
@@ -113,38 +62,197 @@ async function doLogin(chatId: number, email: string): Promise<void> {
       await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
     }
     else {
-      // несколько резюме — отправляем новый селектор внизу
       state.pendingResumes = resumes
-      const selectorMsg = await bot.sendMessage(chatId, '📄 Выбери резюме:', {
+      await bot.sendMessage(chatId, '📄 Выбери резюме:', {
         reply_markup: {
           inline_keyboard: [
             ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
-            [{ text: '◀️ Назад', callback_data: 'hh_back' }],
+            [{ text: '◀️ Закрыть', callback_data: 'hh_back' }],
           ],
         },
       })
-      state.menuMessageId = selectorMsg.message_id
-      return
     }
-
-    await showMenu(chatId)
   }
   catch (e) {
-    await resetMenuToBottom(chatId)
     await bot.sendMessage(chatId, `❌ Ошибка: ${(e as Error).message}`)
-    await showMenu(chatId)
   }
+}
+
+async function handleApply(chatId: number): Promise<void> {
+  const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+  if (!settings)
+    return
+
+  const reporter = createStatusReporter(chatId)
+  await reporter.status(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`)
+
+  applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId, reporter })
+    .then(async (result) => {
+      if (result.error) {
+        await bot.sendMessage(chatId, `❌ ${result.error}`)
+        return
+      }
+
+      const lines: string[] = []
+      lines.push(`📊 <b>Итого по запросу «${settings.searchQuery}»</b>`)
+      lines.push(`✅ Откликнулся: ${result.applied.length}`)
+      lines.push(`⏭ Пропущено: ${result.skipped.length}`)
+      if (result.errors.length)
+        lines.push(`❌ Ошибок: ${result.errors.length}`)
+
+      if (result.skipped.length) {
+        lines.push('')
+        lines.push('⏭ <b>Пропущенные:</b>')
+        result.skipped.forEach(v => lines.push(`• <a href="${v.href}">${v.title}</a>`))
+      }
+
+      if (result.errors.length) {
+        lines.push('')
+        lines.push('❌ <b>Ошибки:</b>')
+        result.errors.forEach(v => lines.push(`• <a href="${v.href}">${escapeHtml(v.title)}</a> — ${escapeHtml(v.message ?? '')}`))
+      }
+
+      const fullText = lines.join('\n')
+      const LIMIT = 4000
+      for (let i = 0; i < fullText.length; i += LIMIT) {
+        await bot.sendMessage(chatId, fullText.slice(i, i + LIMIT), {
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        })
+      }
+    })
+}
+
+async function handleStatus(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+  const isAuth = await checkIsAuth(chatId)
+  await bot.sendMessage(
+    chatId,
+    `⚙️ Настройки:\n\nЗапрос: ${settings?.searchQuery ?? '--'}\nМакс откликов: ${settings?.maxApplies ?? '--'}\nАвто: ${state.autoCron ? '✅ включено' : '❌ выключено'}\nАвторизован: ${isAuth ? '✅' : '❌'}`,
+    { reply_markup: BACK_MARKUP },
+  )
+}
+
+async function handleLogin(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+  state.awaitingEmail = true
+
+  if (!user?.hhEmail) {
+    await bot.sendMessage(chatId, '📧 Введи email от hh.ru:')
+  }
+  else {
+    const prompt = await bot.sendMessage(
+      chatId,
+      `📧 Текущий email: <b>${user.hhEmail}</b>\n\nИспользовать его или введи другой:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: `✅ Войти как ${user.hhEmail}`, callback_data: 'hh_login_use_current' },
+          ]],
+        },
+      },
+    )
+    state.loginPromptMessageId = prompt.message_id
+  }
+}
+
+async function handleResumeList(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  const loadingMsg = await bot.sendMessage(chatId, '🔄 Загружаю список резюме...')
+
+  let resumes: ResumeListItem[]
+  try {
+    resumes = await listResumes(chatId)
+    console.log(`[handleResumeList ${chatId}]: ${resumes}`)
+  }
+  catch (e) {
+    await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {})
+    if (e instanceof NoResumeError) {
+      await bot.sendMessage(
+        chatId,
+        '📝 Резюме не найдено.\n\nСоздайте резюме на <a href="https://hh.ru/applicant/resumes/new">hh.ru</a>, затем нажмите <b>Повторить</b>.',
+        { parse_mode: 'HTML', reply_markup: NO_RESUME_MARKUP },
+      )
+    }
+    else {
+      await bot.sendMessage(chatId, '❌ Не удалось загрузить резюме. Попробуйте войти заново через «Войти на hh.ru».')
+    }
+    return
+  }
+
+  await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {})
+
+  if (resumes.length === 0) {
+    await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
+  }
+  else if (resumes.length === 1) {
+    await saveResume(chatId, resumes[0])
+    await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
+  }
+  else {
+    state.pendingResumes = resumes
+    await bot.sendMessage(chatId, '📄 Выбери резюме:', {
+      reply_markup: {
+        inline_keyboard: [
+          ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
+          [{ text: '◀️ Закрыть', callback_data: 'hh_back' }],
+        ],
+      },
+    })
+  }
+}
+
+async function handleMyResume(chatId: number): Promise<void> {
+  const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+  const resume = settings?.selectedResumeId
+    ? await prisma.resume.findUnique({ where: { id: settings.selectedResumeId } })
+    : await prisma.resume.findFirst({ where: { telegramId: chatId } })
+
+  if (!resume) {
+    await bot.sendMessage(chatId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
+    return
+  }
+
+  const MAX = 3500
+  const text = resume.data.length > MAX
+    ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
+    : resume.data
+
+  await bot.sendMessage(
+    chatId,
+    `📋 <b>Твоё резюме:</b>\n<b>${resume.title}</b>\n<pre>${escapeHtml(text)}</pre>`,
+    { parse_mode: 'HTML', reply_markup: BACK_MARKUP },
+  )
+}
+
+async function handleSkipped(chatId: number): Promise<void> {
+  const skipped = await prisma.skippedVacancy.findMany({
+    where: { telegramId: chatId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  })
+
+  if (!skipped.length) {
+    await bot.sendMessage(chatId, '✅ Проблемных вакансий нет')
+    return
+  }
+
+  const lines = ['🚫 <b>Вакансии с опросником (бот не может откликнуться):</b>', '']
+  skipped.forEach(v => lines.push(`• <a href="${escapeHtml(v.href)}">${escapeHtml(v.title)}</a>`))
+  await bot.sendMessage(chatId, lines.join('\n'), {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    reply_markup: BACK_MARKUP,
+  })
 }
 
 export async function triggerHHStart(chatId: number): Promise<void> {
   const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
-  if (!user?.session) {
-    const state = getState(chatId)
-    const msg = await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: LOGIN_MARKUP })
-    state.menuMessageId = msg.message_id
-    return
-  }
-  await showMenu(chatId)
+  const keyboard = user?.session ? MAIN_REPLY_KEYBOARD : LOGIN_REPLY_KEYBOARD
+  await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: keyboard })
 }
 
 export function registerHHCommands() {
@@ -162,242 +270,45 @@ export function registerHHCommands() {
 
     await bot.answerCallbackQuery(query.id).catch(() => {})
 
-    const user = await prisma.user.findUnique({
-      where: { telegramId: chatId },
-      include: { Settings: true },
-    })
-    const settings = user!.Settings!
-
     switch (query.data) {
       case 'hh_back':
-        await showMenu(chatId, messageId)
-        break
-
-      case 'hh_apply': {
         await bot.deleteMessage(chatId, messageId).catch(() => {})
-        state.menuMessageId = null
-
-        const reporter = createStatusReporter(chatId)
-        await reporter.status(`🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`)
-
-        applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId, reporter })
-          .then(async (result) => {
-            if (result.error) {
-              await bot.sendMessage(chatId, `❌ ${result.error}`)
-            }
-            else {
-              const lines: string[] = []
-              lines.push(`📊 <b>Итого по запросу «${settings.searchQuery}»</b>`)
-              lines.push(`✅ Откликнулся: ${result.applied.length}`)
-              lines.push(`⏭ Пропущено: ${result.skipped.length}`)
-              if (result.errors.length)
-                lines.push(`❌ Ошибок: ${result.errors.length}`)
-
-              if (result.skipped.length) {
-                lines.push('')
-                lines.push('⏭ <b>Пропущенные:</b>')
-                result.skipped.forEach(v => lines.push(`• <a href="${v.href}">${v.title}</a>`))
-              }
-
-              if (result.errors.length) {
-                lines.push('')
-                lines.push('❌ <b>Ошибки:</b>')
-                result.errors.forEach(v => lines.push(`• <a href="${v.href}">${escapeHtml(v.title)}</a> — ${escapeHtml(v.message ?? '')}`))
-              }
-
-              const fullText = lines.join('\n')
-              const LIMIT = 4000
-              for (let i = 0; i < fullText.length; i += LIMIT) {
-                await bot.sendMessage(chatId, fullText.slice(i, i + LIMIT), {
-                  parse_mode: 'HTML',
-                  disable_web_page_preview: true,
-                })
-              }
-            }
-            await showMenu(chatId)
-          })
         break
-      }
-
-      case 'hh_status': {
-        const isAuth = await checkIsAuth(chatId)
-        await showResult(
-          chatId,
-          messageId,
-          `⚙️ Настройки:\n\nЗапрос: ${settings.searchQuery}\nМакс откликов: ${settings.maxApplies}\nАвто: ${state.autoCron ? '✅ включено' : '❌ выключено'}\nАвторизован: ${isAuth ? '✅' : '❌'}`,
-        )
-        break
-      }
-
-      case 'hh_my_resume': {
-        const resume = settings?.selectedResumeId
-          ? await prisma.resume.findUnique({ where: { id: settings.selectedResumeId } })
-          : await prisma.resume.findFirst({ where: { telegramId: chatId } })
-        if (!resume) {
-          await showResult(chatId, messageId, '📋 Резюме не найдено.\n\nВыбери резюме через кнопку 📄 Выбрать резюме.')
-          break
-        }
-        const MAX = 3500
-        const text = resume.data.length > MAX
-          ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
-          : resume.data
-        await safeEdit(
-          `📋 <b>Твоё резюме:</b>\n <b>${resume.title}</b>\n<pre>${escapeHtml(text)}</pre>`,
-          {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'HTML',
-            reply_markup: BACK_MARKUP,
-          },
-        )
-        break
-      }
 
       case 'hh_login':
-        state.menuMessageId = messageId
-        if (!user?.hhEmail) {
-          state.awaitingEmail = true
-          await bot.sendMessage(chatId, '📧 Введи email от hh.ru:')
-        }
-        else {
-          state.awaitingEmail = true
-          const prompt = await bot.sendMessage(
-            chatId,
-            `📧 Текущий email: <b>${user.hhEmail}</b>\n\nИспользовать его или введи другой:`,
-            {
-              parse_mode: 'HTML',
-              reply_markup: {
-                inline_keyboard: [[
-                  { text: `✅ Войти как ${user.hhEmail}`, callback_data: 'hh_login_use_current' },
-                ]],
-              },
-            },
-          )
-          state.loginPromptMessageId = prompt.message_id
-        }
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
+        await handleLogin(chatId)
         break
 
       case 'hh_login_use_current': {
         state.awaitingEmail = false
         await bot.deleteMessage(chatId, messageId).catch(() => {})
         state.loginPromptMessageId = null
-        const email = user?.hhEmail
-        if (!email) {
+        const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+        if (!user?.hhEmail) {
           await bot.sendMessage(chatId, '❌ Email не найден, введи вручную')
           state.awaitingEmail = true
           break
         }
-        await doLogin(chatId, email)
+        await doLogin(chatId, user.hhEmail)
         break
       }
 
-      case 'hh_query':
-      {
-        state.awaitingQuery = true
-        state.menuMessageId = messageId
-
-        const q = await prisma.settings.findFirst({
-          where: { telegramId: chatId },
-        })
-
-        await bot.sendMessage(chatId, `🔍Текущий запрос: ${q?.searchQuery || '--'}`)
-        await bot.sendMessage(chatId, '🔍 Введи поисковый запрос:')
+      case 'hh_resume_list':
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
+        await handleResumeList(chatId)
         break
-      }
-
-      case 'hh_max':
-        state.awaitingMax = true
-        state.menuMessageId = messageId
-        await bot.sendMessage(chatId, '🔢 Введи максимальное количество откликов (1-50):')
-        break
-
-      case 'hh_auto_start':
-        if (state.autoCron) {
-          await showResult(chatId, messageId, '⚠️ Авто уже запущено')
-          break
-        }
-        state.autoCron = cron.schedule('0 10 * * 1-5', async () => {
-          await bot.sendMessage(chatId, '⏰ Авто-отклик...')
-        })
-        await showResult(chatId, messageId, '✅ Авто включён (пн-пт, 10:00)')
-        break
-
-      case 'hh_auto_stop':
-        state.autoCron?.stop()
-        state.autoCron = null
-        await showResult(chatId, messageId, '⛔ Авто остановлен')
-        break
-
-      case 'hh_skipped': {
-        const skipped = await prisma.skippedVacancy.findMany({
-          where: { telegramId: chatId },
-          orderBy: { createdAt: 'desc' },
-          take: 50,
-        })
-        if (!skipped.length) {
-          await showResult(chatId, messageId, '✅ Проблемных вакансий нет')
-          break
-        }
-        const lines = ['🚫 <b>Вакансии с опросником (бот не может откликнуться):</b>', '']
-        skipped.forEach(v => lines.push(`• <a href="${escapeHtml(v.href)}">${escapeHtml(v.title)}</a>`))
-        await safeEdit(lines.join('\n'), {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          reply_markup: BACK_MARKUP,
-        })
-        break
-      }
-
-      case 'hh_resume_list': {
-        await safeEdit('🔄 Загружаю список резюме...', {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: { inline_keyboard: [] },
-        })
-        let resumes: Awaited<ReturnType<typeof listResumes>>
-        try {
-          resumes = await listResumes(chatId)
-        }
-        catch (e) {
-          if (e instanceof NoResumeError) {
-            await safeEdit(
-              '📝 Резюме не найдено.\n\nСоздайте резюме на <a href="https://hh.ru/applicant/resumes/new">hh.ru</a>, затем нажмите <b>Повторить</b>.',
-              { chat_id: chatId, message_id: messageId, reply_markup: NO_RESUME_MARKUP, parse_mode: 'HTML' },
-            )
-          }
-          else {
-            console.error('[hh_resume_list] listResumes failed:', e)
-            await showResult(chatId, messageId, '❌ Не удалось загрузить резюме. Попробуйте войти заново через «Войти на hh.ru».')
-          }
-          break
-        }
-        if (resumes.length === 0) {
-          await showResult(chatId, messageId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
-        }
-        else if (resumes.length === 1) {
-          await safeEdit('🔄 Сохраняю резюме...', {
-            chat_id: chatId,
-            message_id: messageId,
-            reply_markup: { inline_keyboard: [] },
-          })
-          await saveResume(chatId, resumes[0])
-          await showResult(chatId, messageId, `✅ Резюме сохранено: ${resumes[0].title}`)
-        }
-        else {
-          state.menuMessageId = messageId
-          await sendResumeSelector(chatId, resumes, messageId)
-        }
-        break
-      }
 
       default: {
         if (query.data?.startsWith('hh_resume_pick_')) {
           const idx = Number(query.data.replace('hh_resume_pick_', ''))
           const resume = state.pendingResumes[idx]
           if (!resume) {
-            await showResult(chatId, messageId, '❌ Резюме не найдено, попробуйте снова')
+            await safeEdit('❌ Резюме не найдено, попробуйте снова', {
+              chat_id: chatId,
+              message_id: messageId,
+              reply_markup: { inline_keyboard: [] },
+            })
             break
           }
           await safeEdit('🔄 Сохраняю резюме...', {
@@ -407,7 +318,11 @@ export function registerHHCommands() {
           })
           await saveResume(chatId, resume)
           state.pendingResumes = []
-          await showResult(chatId, messageId, `✅ Резюме выбрано: ${resume.title}`)
+          await safeEdit(`✅ Резюме выбрано: ${resume.title}`, {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: BACK_MARKUP,
+          })
         }
         break
       }
@@ -421,11 +336,6 @@ export function registerHHCommands() {
       return
 
     const state = getState(chatId)
-
-    const user = await prisma.user.findUnique({
-      where: { telegramId: chatId },
-      include: { Settings: true },
-    })
 
     if (state.awaitingEmail) {
       state.awaitingEmail = false
@@ -446,7 +356,6 @@ export function registerHHCommands() {
         data: { searchQuery: msg.text },
       })
       await bot.sendMessage(chatId, `✅ Запрос: "${updated.searchQuery}"`)
-      await showMenu(chatId)
       return
     }
 
@@ -463,7 +372,67 @@ export function registerHHCommands() {
         data: { maxApplies: num },
       })
       await bot.sendMessage(chatId, `✅ Макс откликов: ${updated.maxApplies}`)
-      await showMenu(chatId)
+      return
+    }
+
+    switch (msg.text) {
+      case BTN.APPLY:
+        await handleApply(chatId)
+        break
+
+      case BTN.STATUS:
+        await handleStatus(chatId)
+        break
+
+      case BTN.QUERY: {
+        state.awaitingQuery = true
+        const q = await prisma.settings.findFirst({ where: { telegramId: chatId } })
+        await bot.sendMessage(chatId, `🔍 Текущий запрос: ${q?.searchQuery || '--'}`)
+        await bot.sendMessage(chatId, '🔍 Введи новый поисковый запрос:')
+        break
+      }
+
+      case BTN.MAX:
+        state.awaitingMax = true
+        await bot.sendMessage(chatId, '🔢 Введи максимальное количество откликов (1-50):')
+        break
+
+      case BTN.AUTO_ON: {
+        const s = getState(chatId)
+        if (s.autoCron) {
+          await bot.sendMessage(chatId, '⚠️ Авто уже запущено')
+          break
+        }
+        s.autoCron = cron.schedule('0 10 * * 1-5', async () => {
+          await bot.sendMessage(chatId, '⏰ Авто-отклик...')
+        })
+        await bot.sendMessage(chatId, '✅ Авто включён (пн-пт, 10:00)')
+        break
+      }
+
+      case BTN.AUTO_OFF: {
+        const s = getState(chatId)
+        s.autoCron?.stop()
+        s.autoCron = null
+        await bot.sendMessage(chatId, '⛔ Авто остановлен')
+        break
+      }
+
+      case BTN.LOGIN:
+        await handleLogin(chatId)
+        break
+
+      case BTN.RESUME_LIST:
+        await handleResumeList(chatId)
+        break
+
+      case BTN.MY_RESUME:
+        await handleMyResume(chatId)
+        break
+
+      case BTN.SKIPPED:
+        await handleSkipped(chatId)
+        break
     }
   })
 }

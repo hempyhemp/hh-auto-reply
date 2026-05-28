@@ -158,14 +158,17 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
         items = await page.$$eval(
           '[data-qa^="resume-card-link-"]',
           links => links.map((a) => {
-            const card = a.closest('[data-qa^="resume-card"]') ?? a.parentElement
-            const titleEl = card?.querySelector('[data-qa="resume-title"] h3') ?? card?.querySelector('[data-qa="title"]')
+            const card = a.parentElement
+            const titleEl = card?.querySelector('[data-qa="resume-title"]') ?? card?.querySelector('[data-qa="title"]')
+            console.log(titleEl)
             return {
               href: (a as HTMLAnchorElement).getAttribute('href') ?? '',
-              title: titleEl?.textContent?.trim() ?? '(без названия)',
+              title: titleEl?.innerText?.trim() ?? '(Ошибка в получении названия)',
             }
           }),
         )
+
+        console.log(items.length)
       }
       else {
         const href = await cardLinks[0].getAttribute('href') ?? ''
