@@ -25,7 +25,8 @@ jobs:
       #        run: cp /home/koptilnya/services/chad/data/database.db /home/koptilnya/services/chad/database-$(date+"%d-%m-%Y").db
 
       - name: Build
-        run: docker build -t hh-auto-reply
+        run: docker build -t hh-auto-reply .
+
 
       - name: Stop old container
         run: docker rm -f hh-auto-reply || true
