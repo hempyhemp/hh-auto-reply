@@ -96,9 +96,10 @@ export async function login(email: string, chatId: number): Promise<void> {
     await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
 
     const cookies = await context.cookies()
-    await prisma.user.update({
+    await prisma.user.upsert({
       where: { telegramId: chatId },
-      data: { session: JSON.stringify(cookies, null, 2) },
+      update: { session: JSON.stringify(cookies, null, 2) },
+      create: { telegramId: chatId, session: JSON.stringify(cookies, null, 2), Settings: { create: {} } },
     })
 
     await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')

@@ -39,7 +39,11 @@ async function doLogin(chatId: number, email: string): Promise<void> {
   await bot.sendMessage(chatId, '🔄 Логинюсь...')
   try {
     await login(email, chatId)
-    await prisma.user.update({ where: { telegramId: chatId }, data: { hhEmail: email } })
+    await prisma.user.upsert({
+      where: { telegramId: chatId },
+      update: { hhEmail: email },
+      create: { telegramId: chatId, hhEmail: email, Settings: { create: {} } },
+    })
 
     const state = getState(chatId)
 
@@ -380,9 +384,10 @@ export function registerHHCommands() {
     if (state.awaitingPrompt) {
       state.awaitingPrompt = false
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
-      await prisma.user.update({
+      await prisma.user.upsert({
         where: { telegramId: chatId },
-        data: { prompt: msg.text },
+        update: { prompt: msg.text },
+        create: { telegramId: chatId, prompt: msg.text, Settings: { create: {} } },
       })
       await bot.sendMessage(chatId, '✅ Промт сохранён')
       return
