@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["src/*"],
       "@bot": ["src/bot-singleton"],
@@ -11,6 +12,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    "skipLibCheck": true,
     "esModuleInterop": true
   }
 }

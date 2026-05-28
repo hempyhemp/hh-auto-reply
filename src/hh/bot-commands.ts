@@ -3,7 +3,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
 import { applyToJobs, checkIsAuth, listResumes, login, saveResume } from './scraper.js'
-import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, showResult } from './ui.js'
+import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, safeEdit, showResult } from './ui.js'
 
 interface UserState {
   autoCron: ScheduledTask | null
@@ -43,7 +43,7 @@ async function showMenu(chatId: number, messageId?: number | null): Promise<void
 
   if (targetId) {
     try {
-      await bot.editMessageText('🤖 HH Auto-Apply', {
+      await safeEdit('🤖 HH Auto-Apply', {
         chat_id: chatId,
         message_id: targetId,
         reply_markup: MAIN_MARKUP,
@@ -63,7 +63,7 @@ async function showMenu(chatId: number, messageId?: number | null): Promise<void
 async function sendResumeSelector(chatId: number, resumes: ResumeListItem[], messageId: number): Promise<void> {
   const state = getState(chatId)
   state.pendingResumes = resumes
-  await bot.editMessageText('📄 Выбери резюме:', {
+  await safeEdit('📄 Выбери резюме:', {
     chat_id: chatId,
     message_id: messageId,
     reply_markup: {
@@ -241,7 +241,7 @@ export function registerHHCommands() {
         const text = resume.data.length > MAX
           ? `${resume.data.slice(0, MAX)}\n\n… (текст обрезан)`
           : resume.data
-        await bot.editMessageText(
+        await safeEdit(
           `📋 <b>Твоё резюме:</b>\n <b>${resume.title}</b>\n<pre>${escapeHtml(text)}</pre>`,
           {
             chat_id: chatId,
@@ -340,7 +340,7 @@ export function registerHHCommands() {
         }
         const lines = ['🚫 <b>Вакансии с опросником (бот не может откликнуться):</b>', '']
         skipped.forEach(v => lines.push(`• <a href="${escapeHtml(v.href)}">${escapeHtml(v.title)}</a>`))
-        await bot.editMessageText(lines.join('\n'), {
+        await safeEdit(lines.join('\n'), {
           chat_id: chatId,
           message_id: messageId,
           parse_mode: 'HTML',
@@ -351,7 +351,7 @@ export function registerHHCommands() {
       }
 
       case 'hh_resume_list': {
-        await bot.editMessageText('🔄 Загружаю список резюме...', {
+        await safeEdit('🔄 Загружаю список резюме...', {
           chat_id: chatId,
           message_id: messageId,
           reply_markup: { inline_keyboard: [] },
@@ -361,7 +361,7 @@ export function registerHHCommands() {
           await showResult(chatId, messageId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
         }
         else if (resumes.length === 1) {
-          await bot.editMessageText('🔄 Сохраняю резюме...', {
+          await safeEdit('🔄 Сохраняю резюме...', {
             chat_id: chatId,
             message_id: messageId,
             reply_markup: { inline_keyboard: [] },
@@ -384,7 +384,7 @@ export function registerHHCommands() {
             await showResult(chatId, messageId, '❌ Резюме не найдено, попробуйте снова')
             break
           }
-          await bot.editMessageText('🔄 Сохраняю резюме...', {
+          await safeEdit('🔄 Сохраняю резюме...', {
             chat_id: chatId,
             message_id: messageId,
             reply_markup: { inline_keyboard: [] },

@@ -37,8 +37,19 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+export async function safeEdit(
+  text: string,
+  options: Parameters<typeof bot.editMessageText>[1],
+): Promise<void> {
+  await bot.editMessageText(text, options).catch((e: unknown) => {
+    if (e instanceof Error && e.message.includes('message is not modified'))
+      return
+    throw e
+  })
+}
+
 export async function showResult(chatId: number, messageId: number, text: string): Promise<void> {
-  await bot.editMessageText(text, {
+  await safeEdit(text, {
     chat_id: chatId,
     message_id: messageId,
     reply_markup: BACK_MARKUP,

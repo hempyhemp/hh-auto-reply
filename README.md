@@ -75,7 +75,40 @@ Resume       — текст резюме, привязан к пользоват
 Settings     — searchQuery, maxApplies
 ```
 
-## Запуск
+## Docker
+
+### Сборка образа
+
+```bash
+docker build -t oscr-test-bot .
+```
+
+### Запуск контейнера
+
+Создай файл `.env.docker`:
+
+```
+DATABASE_URL=file:/data/dev.db
+TG_BOT_TOKEN=your_token
+GROQ_API_KEY=your_key
+OPENROUTER_API_KEY=your_key
+```
+
+Запуск (Linux/Mac):
+
+```bash
+docker run --rm --env-file .env.docker -v $(pwd)/data:/data oscr-test-bot
+```
+
+Запуск (Windows PowerShell):
+
+```powershell
+docker run --rm --env-file .env.docker -v //c/MyApps/oscr-test-bot/data:/data oscr-test-bot
+```
+
+SQLite база данных сохраняется в папку `data/` и переживает перезапуски контейнера.
+
+## Запуск локально
 
 ```bash
 # 1. Установить зависимости

@@ -1,6 +1,11 @@
 import bot from '@bot'
 
 import prisma from '@prisma'
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason)
+  console.error('[unhandledRejection]', msg)
+})
 import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 
 registerHHCommands()

@@ -17,20 +17,18 @@ COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
 
-RUN yarn prisma generate && yarn build
+RUN yarn prisma generate
 
 # ── Stage 2: runtime ───────────────────────────────────────────────────────────
 FROM node:22-slim AS runner
 
 WORKDIR /app
-RUN yarn prisma migrate deploy
-
 RUN corepack enable
 
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
-COPY package.json yarn.lock .yarnrc.yml ./
+COPY package.json yarn.lock .yarnrc.yml tsconfig.json ./
 
 # install Chromium + all system dependencies for Playwright
 RUN npx playwright install --with-deps chromium
@@ -43,4 +41,4 @@ ENV NODE_ENV=production
 VOLUME ["/data"]
 
 # apply pending migrations then start the bot
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx src/index.ts"]
