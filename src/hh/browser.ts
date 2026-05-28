@@ -16,7 +16,15 @@ export async function randomScroll(page: Page): Promise<void> {
 }
 
 export async function getBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: !!(process.env?.debug ?? true) })
+  return chromium.launch({
+    headless: !!(process.env?.debug ?? true),
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  })
 }
 
 export async function loadSession(page: Page, telegramId: bigint | number): Promise<boolean> {

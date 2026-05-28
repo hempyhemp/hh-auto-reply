@@ -61,47 +61,51 @@ export async function login(email: string, chatId: number): Promise<void> {
     return
   }
 
-  const context = await browser.newContext()
-  const page = await context.newPage()
+  try {
+    const context = await browser.newContext()
+    const page = await context.newPage()
 
-  await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
-  // await bot.sendMessage(chatId, `page: ${page.url()}`)
+    await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
+    // await bot.sendMessage(chatId, `page: ${page.url()}`)
 
-  await page.click('[data-qa="submit-button"]')
-  await page.waitForTimeout(randomDelay())
-  // await bot.sendMessage(chatId, `Клик по "Войти"`)
+    await page.click('[data-qa="submit-button"]')
+    await page.waitForTimeout(randomDelay())
+    // await bot.sendMessage(chatId, `Клик по "Войти"`)
 
-  await page.click('label:has([data-qa="credential-type-EMAIL"])')
-  await page.waitForTimeout(randomDelay())
-  // await bot.sendMessage(chatId, `Клик по "Email"`)
+    await page.click('label:has([data-qa="credential-type-EMAIL"])')
+    await page.waitForTimeout(randomDelay())
+    // await bot.sendMessage(chatId, `Клик по "Email"`)
 
-  await page.fill('[data-qa="applicant-login-input-email"]', email)
-  await page.waitForTimeout(randomDelay())
-  // await bot.sendMessage(chatId, `Ввод "Email"`)
+    await page.fill('[data-qa="applicant-login-input-email"]', email)
+    await page.waitForTimeout(randomDelay())
+    // await bot.sendMessage(chatId, `Ввод "Email"`)
 
-  await page.click('[data-qa="submit-button"]')
-  // await bot.sendMessage(chatId, `Клик по "Дальше"`)
-  await page.waitForTimeout(randomDelay())
+    await page.click('[data-qa="submit-button"]')
+    // await bot.sendMessage(chatId, `Клик по "Дальше"`)
+    await page.waitForTimeout(randomDelay())
 
-  await bot.sendMessage(chatId, '🔑 Введи код из email')
-  await page.waitForTimeout(randomDelay())
+    await bot.sendMessage(chatId, '🔑 Введи код из email')
+    await page.waitForTimeout(randomDelay())
 
-  await page.click('[data-qa="applicant-login-input-otp"]')
-  const otp = await waitForOtp(chatId)
-  await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
-  // await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
+    await page.click('[data-qa="applicant-login-input-otp"]')
+    const otp = await waitForOtp(chatId)
+    await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
+    // await bot.sendMessage(chatId, `Введён ОТП: ${otp}`)
 
-  await page.waitForTimeout(randomDelay())
-  await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
+    await page.waitForTimeout(randomDelay())
+    await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
 
-  const cookies = await context.cookies()
-  await prisma.user.update({
-    where: { telegramId: chatId },
-    data: { session: JSON.stringify(cookies, null, 2) },
-  })
+    const cookies = await context.cookies()
+    await prisma.user.update({
+      where: { telegramId: chatId },
+      data: { session: JSON.stringify(cookies, null, 2) },
+    })
 
-  await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
-  await browser.close()
+    await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
+  }
+  finally {
+    await browser.close()
+  }
 }
 
 export async function checkIsAuth(telegramId: bigint | number) {
