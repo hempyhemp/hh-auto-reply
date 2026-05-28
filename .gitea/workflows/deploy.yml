@@ -38,7 +38,7 @@ jobs:
           docker run -d \
             --name hh-auto-reply \
             --network traefik \
-            --volume /home/koptilnya/services/hh-auto-reply/data:/app/data \
+            --volume /home/koptilnya/services/hh-auto-reply/data:/data \
             --env OPENROUTER_API_KEY=${{secrets.OPENROUTER_API_KEY}} \
             --env DATABASE_URL=${{secrets.DATABASE_URL}} \
             --env GROQ_API_KEY=${{secrets.GROQ_API_KEY}} \
