@@ -31,15 +31,17 @@ jobs:
       - name: Stop old container
         run: docker rm -f hh-auto-reply || true
 
+#docker run --rm --env-file .env.docker -v $(pwd)/data:/data oscr-test-bot
+
       - name: Run
         run: |
           docker run -d \
             --name hh-auto-reply \
             --network traefik \
             --volume /home/koptilnya/services/hh-auto-reply/data:/app/data \
-            --env OPENROUTER_API_KEY=${{secrets.OPENROUTER_API_KEY}}
-            --env DATABASE_URL=${{secrets.DATABASE_URL}}
-            --env YOUR_TELEGRAM_ID=${{secrets.YOUR_TELEGRAM_ID}}
-            --env GROQ_API_KEY=${{secrets.GROQ_API_KEY}}
-            --env TG_BOT_TOKEN=${{secrets.TG_BOT_TOKEN}}
+            --env OPENROUTER_API_KEY=${{secrets.OPENROUTER_API_KEY}} \
+            --env DATABASE_URL=${{secrets.DATABASE_URL}} \
+            --env YOUR_TELEGRAM_ID=${{secrets.YOUR_TELEGRAM_ID}} \
+            --env GROQ_API_KEY=${{secrets.GROQ_API_KEY}} \
+            --env TG_BOT_TOKEN=${{secrets.TG_BOT_TOKEN}} \
             hh-auto-reply:latest
