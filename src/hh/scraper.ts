@@ -374,13 +374,19 @@ export async function applyToJobs(
           if (letter) {
             await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
 
-            await page.waitForSelector(
-              '[data-qa="textarea-wrapper"], [data-qa="vacancy-response-popup-form-letter-input"], [data-qa="textarea-native-wrapper"]',
-              { timeout: 10000 },
-            ).catch(() => {})
+            const LETTER_SELECTORS = [
+              '[data-qa="textarea-wrapper"] textarea',
+              '[data-qa="vacancy-response-popup-form-letter-input"]',
+              '[data-qa="textarea-native-wrapper"] textarea',
+            ]
 
-            const letterInput = await page.$('[data-qa="textarea-wrapper"] textarea')
-              ?? await page.$('[data-qa="vacancy-response-popup-form-letter-input"]') ?? await page.$('[data-qa="textarea-native-wrapper"] textarea')
+            await page.waitForSelector(LETTER_SELECTORS.join(', '), { timeout: 10000 }).catch(() => {})
+
+            let letterInput = null
+            for (const sel of LETTER_SELECTORS) {
+              letterInput = await page.$(sel)
+              if (letterInput) break
+            }
             await letterInput?.click()
             await letterInput?.fill(letter, { force: true })
           }
