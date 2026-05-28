@@ -33,6 +33,13 @@ export const BACK_MARKUP = {
   inline_keyboard: [[{ text: '◀️ Назад', callback_data: 'hh_back' }]],
 }
 
+export const NO_RESUME_MARKUP = {
+  inline_keyboard: [[
+    { text: '🔄 Повторить', callback_data: 'hh_resume_list' },
+    { text: '🔑 Другой аккаунт', callback_data: 'hh_login' },
+  ]],
+}
+
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -42,7 +49,10 @@ export async function safeEdit(
   options: Parameters<typeof bot.editMessageText>[1],
 ): Promise<void> {
   await bot.editMessageText(text, options).catch((e: unknown) => {
-    if (e instanceof Error && e.message.includes('message is not modified'))
+    if (e instanceof Error && (
+      e.message.includes('message is not modified')
+      || e.message.includes('message to edit not found')
+    ))
       return
     throw e
   })

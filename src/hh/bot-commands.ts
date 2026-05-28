@@ -2,8 +2,8 @@ import type { ResumeListItem } from './types.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
-import { applyToJobs, checkIsAuth, listResumes, login, saveResume } from './scraper.js'
-import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, safeEdit, showResult } from './ui.js'
+import { applyToJobs, checkIsAuth, listResumes, login, NoResumeError, saveResume } from './scraper.js'
+import { BACK_MARKUP, createStatusReporter, escapeHtml, LOGIN_MARKUP, MAIN_MARKUP, NO_RESUME_MARKUP, safeEdit, showResult } from './ui.js'
 
 interface UserState {
   autoCron: ScheduledTask | null
@@ -356,7 +356,23 @@ export function registerHHCommands() {
           message_id: messageId,
           reply_markup: { inline_keyboard: [] },
         })
-        const resumes = await listResumes(chatId)
+        let resumes: Awaited<ReturnType<typeof listResumes>>
+        try {
+          resumes = await listResumes(chatId)
+        }
+        catch (e) {
+          if (e instanceof NoResumeError) {
+            await safeEdit(
+              '📝 Резюме не найдено.\n\nСоздайте резюме на <a href="https://hh.ru/applicant/resumes/new">hh.ru</a>, затем нажмите <b>Повторить</b>.',
+              { chat_id: chatId, message_id: messageId, reply_markup: NO_RESUME_MARKUP, parse_mode: 'HTML' },
+            )
+          }
+          else {
+            console.error('[hh_resume_list] listResumes failed:', e)
+            await showResult(chatId, messageId, '❌ Не удалось загрузить резюме. Попробуйте войти заново через «Войти на hh.ru».')
+          }
+          break
+        }
         if (resumes.length === 0) {
           await showResult(chatId, messageId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
         }

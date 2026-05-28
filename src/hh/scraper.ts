@@ -8,6 +8,13 @@ import { createMessage } from '@/openai'
 import { getBrowser, loadSession, newStealthContext, randomDelay, randomScroll } from './browser.js'
 import { escapeHtml } from './ui.js'
 
+export class NoResumeError extends Error {
+  constructor() {
+    super('no_resume')
+    this.name = 'NoResumeError'
+  }
+}
+
 function waitForOtp(chatId: number): Promise<string> {
   return new Promise((resolve) => {
     const handler = (msg: Message) => {
@@ -135,6 +142,13 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       await page.goto('https://hh.ru/applicant/resumes', { waitUntil: 'domcontentloaded' })
+      const finalUrl = page.url()
+      if (finalUrl.includes('/profile/resume/professional_role')) {
+        throw new NoResumeError()
+      }
+      if (!finalUrl.includes('/applicant/resumes')) {
+        throw new Error(`Session expired or redirected: ${finalUrl}`)
+      }
       await page.waitForSelector('[data-qa^="resume-card-link-"]', { timeout: 10000 })
 
       const cardLinks = await page.$$('[data-qa^="resume-card-link-"]')
@@ -195,6 +209,8 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
       return items
     }
     catch (e) {
+      if (e instanceof NoResumeError)
+        throw e
       lastError = e as Error
       if (attempt < 2)
         await page.waitForTimeout(4000)
@@ -389,7 +405,8 @@ export async function applyToJobs(
             let letterInput = null
             for (const sel of LETTER_SELECTORS) {
               letterInput = await page.$(sel)
-              if (letterInput) break
+              if (letterInput)
+                break
             }
             await letterInput?.click()
             await letterInput?.fill(letter, { force: true })
