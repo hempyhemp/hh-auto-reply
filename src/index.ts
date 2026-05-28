@@ -6,7 +6,7 @@ import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason)
 })
-
+console.log('hi')
 registerHHCommands()
 
 bot.onText(/\/start/, async (msg) => {
