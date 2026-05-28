@@ -26,6 +26,7 @@ RUN yarn prisma generate
 FROM node:22-slim AS runner
 
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && npm install -g opencode-ai
 
 COPY --from=builder /app/node_modules ./node_modules
