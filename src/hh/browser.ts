@@ -17,14 +17,28 @@ export async function randomScroll(page: Page): Promise<void> {
 
 export async function getBrowser(): Promise<Browser> {
   return chromium.launch({
-    headless: !!(process.env?.debug ?? true),
+    headless: !process.env.debug,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
     ],
   })
+}
+
+export async function newStealthContext(browser: Browser) {
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 800 },
+    locale: 'ru-RU',
+    timezoneId: 'Europe/Moscow',
+  })
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false })
+  })
+  return context
 }
 
 export async function loadSession(page: Page, telegramId: bigint | number): Promise<boolean> {

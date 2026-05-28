@@ -5,7 +5,7 @@ import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import { createMessage } from '@/openai'
-import { getBrowser, loadSession, randomDelay, randomScroll } from './browser.js'
+import { getBrowser, loadSession, newStealthContext, randomDelay, randomScroll } from './browser.js'
 import { escapeHtml } from './ui.js'
 
 function waitForOtp(chatId: number): Promise<string> {
@@ -62,7 +62,7 @@ export async function login(email: string, chatId: number): Promise<void> {
   }
 
   try {
-    const context = await browser.newContext()
+    const context = await newStealthContext(browser)
     const page = await context.newPage()
 
     await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
@@ -110,7 +110,7 @@ export async function login(email: string, chatId: number): Promise<void> {
 
 export async function checkIsAuth(telegramId: bigint | number) {
   const browser = await getBrowser()
-  const context = await browser.newContext()
+  const context = await newStealthContext(browser)
   const page = await context.newPage()
   await loadSession(page, telegramId)
   await page.goto('https://hh.ru/search/vacancy', { waitUntil: 'domcontentloaded' })
@@ -127,7 +127,7 @@ export async function checkIsAuth(telegramId: bigint | number) {
 
 export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
   const browser = await getBrowser()
-  const context = await browser.newContext()
+  const context = await newStealthContext(browser)
   const page = await context.newPage()
   await loadSession(page, chatId)
 
@@ -218,7 +218,7 @@ export async function applyToJobs(
   { chatId, reporter }: { chatId: number, reporter: StatusReporter },
 ): Promise<ApplyResult> {
   const browser = await getBrowser()
-  const context = await browser.newContext()
+  const context = await newStealthContext(browser)
   const page = await context.newPage()
   const results: ApplyResult = { applied: [], skipped: [], errors: [] }
   const { status, keep, clear } = reporter
