@@ -88,25 +88,53 @@ export async function createMessage(resume: string, message: string, prompt?: st
   const session = await client.session.create({ body: { title: 'Cover letter' } })
   const sessionId = session.data!.id
 
+  console.log('sessionId: ', sessionId)
+
   const finalPromt = 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений. Пиши по короче и простыми словами. В конце письма оставляй все контакты для связи.'
-  // Задаём роль без ответа
+
+  const resumePreview = resume.slice(0, 200).replace(/\n/g, ' ')
+  console.log(`\n${'─'.repeat(60)}`)
+  console.log(`[LLM] 📋 Prompt 1 (system + resume, noReply)`)
+  console.log(`[LLM] system: ${finalPromt.slice(0, 80)}…`)
+  console.log(`[LLM] resume: ${resumePreview}…`)
+  console.log(`${'─'.repeat(60)}`)
+
   await client.session.prompt({
     path: { id: sessionId },
     body: {
       noReply: true,
-      parts: [{ type: 'text', text: finalPromt }],
+      parts: [{ type: 'text', text: `${finalPromt}\n Резюме:\n${resume}` }],
     },
   })
+
+  const vacancyPreview = message.slice(0, 300).replace(/\n/g, ' ')
+  console.log(`\n${'─'.repeat(60)}`)
+  console.log(`[LLM] 📝 Prompt 2 (vacancy) → ожидаю ответ…`)
+  console.log(`[LLM] vacancy: ${vacancyPreview}…`)
+  console.log(`${'─'.repeat(60)}`)
+
   // ${prompt}\n\n
   const result = await client.session.prompt({
     path: { id: sessionId },
     body: {
-      parts: [{ type: 'text', text: `Резюме:\n${resume}\n\nВакансия:\n${message}` }],
+      parts: [{ type: 'text', text: `Вакансия:\n${message}` }],
     },
   })
 
   const parts = (result.data?.parts ?? []) as { type: string, text?: string }[]
   const textPart = parts.find(p => p.type === 'text')
+  console.log(`\n${'─'.repeat(60)}`)
+  console.log(`[LLM] ✅ Ответ получен (${textPart?.text?.length ?? 0} символов)`)
+  console.log(`[LLM] ${textPart?.text?.slice(0, 150).replace(/\n/g, ' ') ?? 'null'}…`)
+  console.log(`${'─'.repeat(60)}\n`)
+
+  try {
+    await client.session.delete({ path: { id: sessionId } })
+  }
+  catch (e) {
+    console.error('[Session cleanup error]:', (e as Error).message)
+  }
+
   return textPart?.text ?? null
 }
 

@@ -1,9 +1,10 @@
 import type { Message } from 'node-telegram-bot-api'
+import type { Page } from 'playwright'
 import type { ApplyOptions, ApplyResult, ResumeListItem, VacancyRef } from './types.js'
 import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
-import { createMessage } from '../openai'
+import { createMessage } from '@/openai'
 import { getBrowser, loadSession, randomDelay, randomScroll } from './browser.js'
 import { escapeHtml } from './ui.js'
 
@@ -17,6 +18,39 @@ function waitForOtp(chatId: number): Promise<string> {
     }
     bot.on('message', handler)
   })
+}
+
+const APPLY_OUTCOME_SELECTOR = [
+  '[data-qa="employer-asking-for-test"]',
+  '[data-qa="task-body"]',
+  '[data-qa="vacancy-response-popup-form-letter-input"]',
+  '[data-qa="vacancy-response-submit-popup"]',
+  '[data-qa="vacancy-response-letter-submit"]',
+  '[data-qa="vacancy-response-letter-toggle"]',
+  '[data-qa="textarea-wrapper"]',
+].join(', ')
+
+async function skipIfQuestionnaire(
+  page: Page,
+  vacancy: { title: string, href: string },
+  ref: VacancyRef,
+  chatId: number,
+  status: (msg: string) => Promise<void>,
+  results: ApplyResult,
+): Promise<boolean> {
+  await page.waitForSelector(APPLY_OUTCOME_SELECTOR, { timeout: 5000 }).catch(() => {})
+  const hasQuestionnaire = await page.$('[data-qa="employer-asking-for-test"], [data-qa="task-body"]')
+  if (!hasQuestionnaire)
+    return false
+  await status(`Пропущена вакансия: ${vacancy.title}`)
+  console.log(`[x] ${vacancy.title} hasQuestionnaire`)
+  await prisma.skippedVacancy.upsert({
+    where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
+    create: { telegramId: chatId, href: vacancy.href, title: vacancy.title },
+    update: {},
+  })
+  results.skipped.push(ref)
+  return true
 }
 
 export async function login(email: string, chatId: number): Promise<void> {
@@ -248,11 +282,6 @@ export async function applyToJobs(
           continue
         }
 
-        await status(`✍️ Генерирую письмо: ${vacancy.title}`)
-
-        console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
-        const letterPromise = createMessage(resume.data, description, user!.prompt)
-
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
         if (!applyBtn) {
           results.skipped.push(vacancy)
@@ -262,20 +291,21 @@ export async function applyToJobs(
         await randomScroll(page)
 
         await applyBtn.click()
-        await page.waitForLoadState('domcontentloaded').catch(() => {})
-        await page.waitForTimeout(randomDelay())
 
-        const hasQuestionnaire = await page.$('[data-qa="employer-asking-for-test"]').catch(() => null)
-        if (hasQuestionnaire) {
-          console.log(`[x] ${vacancy.title} hasQuestionnaire`)
-          await prisma.skippedVacancy.upsert({
-            where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
-            create: { telegramId: chatId, href: vacancy.href, title: vacancy.title },
-            update: {},
-          })
-          results.skipped.push(ref)
+        if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results))
           continue
-        }
+
+        // console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
+        await status(`✍️ Генерирую письмо: ${vacancy.title}`)
+        const letterPromise = Promise.race([
+          createMessage(resume.data, description, user!.prompt),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('Letter generation timeout (60s)')), 80000),
+          ),
+        ]).catch((err: Error) => {
+          console.error('[Letter Error]:', err.message)
+          return null
+        })
 
         if (resumes.length > 1) {
           // Выбор резюме
@@ -288,7 +318,7 @@ export async function applyToJobs(
             console.log('Резюме не совпадает, нужно сменить')
             await currentResumeEl?.click()
             await page.waitForSelector('[data-qa="magritte-select-option-list"]', { timeout: 5000 })
-            await page.pause()
+            // await page.pause()
             const options = await page.$$('label[role="option"]')
             for (const option of options) {
               const titleEl = await option.$('[data-qa="resume-title"] [data-qa="cell-text-content"]')
@@ -300,7 +330,7 @@ export async function applyToJobs(
               }
             }
           }
-          await page.pause()
+          // await page.pause()
 
           const addLetter = await page.$('[data-qa="add-cover-letter"]')
 
@@ -308,16 +338,14 @@ export async function applyToJobs(
             await addLetter?.hover()
             await addLetter?.click()
           }
-
           const letter = await letterPromise
-
           if (letter) {
             await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
             const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
 
             await letterInput?.click()
             await letterInput?.fill(letter)
-            await page.pause()
+            // await page.pause()
           }
           else {
             await keep(`Письмо не сгенерировано, ошибка`)
@@ -339,23 +367,26 @@ export async function applyToJobs(
           }
         }
         else {
-          console.log('single flow')
+          console.log(`[Debug]: single flow: ${chatId}`)
 
           const letter = await letterPromise
-          console.log('letter: ', letter)
 
           if (letter) {
             await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
-            const letterInput = await page.$('[data-qa="textarea-native-wrapper"] textarea')
-              ?? await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
+
+            await page.waitForSelector(
+              '[data-qa="textarea-wrapper"], [data-qa="vacancy-response-popup-form-letter-input"], [data-qa="textarea-native-wrapper"]',
+              { timeout: 10000 },
+            ).catch(() => {})
+
+            const letterInput = await page.$('[data-qa="textarea-wrapper"] textarea')
+              ?? await page.$('[data-qa="vacancy-response-popup-form-letter-input"]') ?? await page.$('[data-qa="textarea-native-wrapper"] textarea')
             await letterInput?.click()
-            await letterInput?.fill(letter)
-            await page.pause()
+            await letterInput?.fill(letter, { force: true })
           }
 
-          await page.waitForTimeout(randomDelay())
-
           const submitBtn = await page.$('[data-qa="vacancy-response-letter-submit"]') ?? await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
+          // await page.pause()
           if (submitBtn) {
             await submitBtn.click()
             await page.waitForTimeout(randomDelay())

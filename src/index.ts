@@ -1,12 +1,11 @@
+// import * as process from 'node:process'
 import bot from '@bot'
-
 import prisma from '@prisma'
+import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 
 process.on('unhandledRejection', (reason) => {
-  const msg = reason instanceof Error ? reason.message : String(reason)
-  console.error('[unhandledRejection]', msg)
+  console.error('[unhandledRejection]', reason)
 })
-import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 
 registerHHCommands()
 
