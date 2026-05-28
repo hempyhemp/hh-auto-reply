@@ -3,7 +3,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import cron, { type ScheduledTask } from 'node-cron'
 import { applyToJobs, checkIsAuth, listResumes, login, NoResumeError, saveResume } from './scraper.js'
-import { BACK_MARKUP, BTN, createStatusReporter, escapeHtml, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, NO_RESUME_MARKUP, safeEdit } from './ui.js'
+import { BACK_MARKUP, BTN, createStatusReporter, escapeHtml, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, NO_RESUME_MARKUP, safeEdit, SETTINGS_REPLY_KEYBOARD } from './ui.js'
 
 interface UserState {
   autoCron: ScheduledTask | null
@@ -397,26 +397,33 @@ export function registerHHCommands() {
         await bot.sendMessage(chatId, '🔢 Введи максимальное количество откликов (1-50):')
         break
 
-      case BTN.AUTO_ON: {
+      case BTN.AUTO_TOGGLE: {
         const s = getState(chatId)
         if (s.autoCron) {
-          await bot.sendMessage(chatId, '⚠️ Авто уже запущено')
-          break
+          s.autoCron.stop()
+          s.autoCron = null
+          await bot.sendMessage(chatId, '⛔ Авто остановлен', { reply_markup: SETTINGS_REPLY_KEYBOARD })
         }
-        s.autoCron = cron.schedule('0 10 * * 1-5', async () => {
-          await bot.sendMessage(chatId, '⏰ Авто-отклик...')
-        })
-        await bot.sendMessage(chatId, '✅ Авто включён (пн-пт, 10:00)')
+        else {
+          s.autoCron = cron.schedule('0 10 * * 1-5', async () => {
+            await bot.sendMessage(chatId, '⏰ Авто-отклик...')
+          })
+          await bot.sendMessage(chatId, '✅ Авто включён (пн-пт, 10:00)', { reply_markup: SETTINGS_REPLY_KEYBOARD })
+        }
         break
       }
 
-      case BTN.AUTO_OFF: {
-        const s = getState(chatId)
-        s.autoCron?.stop()
-        s.autoCron = null
-        await bot.sendMessage(chatId, '⛔ Авто остановлен')
+      case BTN.SETTINGS:
+        await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: SETTINGS_REPLY_KEYBOARD })
         break
-      }
+
+      case BTN.INFO:
+        await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD })
+        break
+
+      case BTN.BACK:
+        await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD })
+        break
 
       case BTN.LOGIN:
         await handleLogin(chatId)

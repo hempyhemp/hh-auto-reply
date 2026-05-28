@@ -4,13 +4,15 @@ export const BTN = {
   APPLY: '🚀 Откликнуться',
   STATUS: '⚙️ Статус',
   QUERY: '🔍 Изменить запрос',
-  MAX: '🔢 Макс откликов',
-  AUTO_ON: '⏰ Авто вкл',
-  AUTO_OFF: '⛔ Авто выкл',
+  MAX: '🔢 Макс. откликов',
+  AUTO_TOGGLE: '⏰ Авто',
   LOGIN: '🔑 Войти на hh.ru',
   RESUME_LIST: '📄 Выбрать резюме',
   MY_RESUME: '📋 Моё резюме',
-  SKIPPED: '🚫 Проблемные',
+  SKIPPED: '🚫 Проблемные вакансии',
+  SETTINGS: '⚙️ Настройки',
+  INFO: 'ℹ️ Информация',
+  BACK: '◀️ Назад',
 } as const
 
 export const LOGIN_REPLY_KEYBOARD = {
@@ -21,11 +23,29 @@ export const LOGIN_REPLY_KEYBOARD = {
 
 export const MAIN_REPLY_KEYBOARD = {
   keyboard: [
-    [{ text: BTN.APPLY }, { text: BTN.STATUS }],
-    [{ text: BTN.QUERY }, { text: BTN.MAX }],
-    [{ text: BTN.AUTO_ON }, { text: BTN.AUTO_OFF }],
-    [{ text: BTN.LOGIN }, { text: BTN.RESUME_LIST }],
-    [{ text: BTN.MY_RESUME }, { text: BTN.SKIPPED }],
+    [{ text: BTN.APPLY }],
+    [{ text: BTN.SETTINGS }, { text: BTN.INFO }],
+  ],
+  resize_keyboard: true,
+  persistent: true,
+}
+
+export const SETTINGS_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: BTN.MAX }, { text: BTN.QUERY }],
+    [{ text: BTN.AUTO_TOGGLE }, { text: BTN.RESUME_LIST }],
+    [{ text: BTN.LOGIN }],
+    [{ text: BTN.BACK }],
+  ],
+  resize_keyboard: true,
+  persistent: true,
+}
+
+export const INFO_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: BTN.STATUS }, { text: BTN.MY_RESUME }],
+    [{ text: BTN.SKIPPED }],
+    [{ text: BTN.BACK }],
   ],
   resize_keyboard: true,
   persistent: true,
@@ -54,8 +74,9 @@ export async function safeEdit(
     if (e instanceof Error && (
       e.message.includes('message is not modified')
       || e.message.includes('message to edit not found')
-    ))
+    )) {
       return
+    }
     throw e
   })
 }
