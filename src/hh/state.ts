@@ -3,6 +3,7 @@ import type { ScheduledTask } from 'node-cron'
 
 export interface UserState {
   autoCron: ScheduledTask | null
+  isApplying: boolean
   awaitingEmail: boolean
   awaitingQuery: boolean
   awaitingMax: boolean
@@ -17,6 +18,7 @@ export interface UserState {
 function makeUserState(): UserState {
   return {
     autoCron: null,
+    isApplying: false,
     awaitingEmail: false,
     awaitingQuery: false,
     awaitingMax: false,

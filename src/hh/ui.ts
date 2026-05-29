@@ -52,6 +52,12 @@ export const INFO_REPLY_KEYBOARD = {
   persistent: true,
 }
 
+export const APPLYING_REPLY_KEYBOARD = {
+  keyboard: [[{ text: '⏳ Откликаюсь на вакансии...' }]],
+  resize_keyboard: true,
+  persistent: true,
+}
+
 export const BACK_MARKUP = {
   inline_keyboard: [[{ text: '◀️ Назад', callback_data: 'hh_back' }]],
 }

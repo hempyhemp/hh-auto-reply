@@ -127,6 +127,12 @@ export function registerHHCommands() {
 
     const chatId = msg.chat.id
     const state = getState(chatId)
+
+    if (state.isApplying) {
+      await bot.sendMessage(chatId, '⏳ Подождите, идут отклики на вакансии...')
+      return
+    }
+
     const isAwaiting = state.awaitingEmail || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt
     const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
 
