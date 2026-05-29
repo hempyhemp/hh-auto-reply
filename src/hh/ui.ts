@@ -4,6 +4,8 @@ export const BTN = {
   APPLY: '🚀 Откликнуться',
   STATUS: '⚙️ Статус',
   QUERY: '🔍 Изменить запрос',
+  EXCLUSIONS: '🚫 Слова исключения',
+  REGION: '🌍 Регион',
   MAX: '🔢 Макс. откликов',
   AUTO_TOGGLE: '⏰ Авто',
   LOGIN: '🔑 Войти на hh.ru',
@@ -11,6 +13,7 @@ export const BTN = {
   MY_RESUME: '📋 Моё резюме',
   SKIPPED: '🚫 Проблемные вакансии',
   SETTINGS: '⚙️ Настройки',
+  FILTERS: '🔎 Фильтры',
   INFO: 'ℹ️ Информация',
   BACK: '◀️ Назад',
   PROMPT: '📝 Промт',
@@ -24,7 +27,7 @@ export const LOGIN_REPLY_KEYBOARD = {
 
 export const MAIN_REPLY_KEYBOARD = {
   keyboard: [
-    [{ text: BTN.APPLY }],
+    [{ text: BTN.APPLY }, { text: BTN.FILTERS }],
     [{ text: BTN.SETTINGS }, { text: BTN.INFO }],
   ],
   resize_keyboard: true,
@@ -33,9 +36,19 @@ export const MAIN_REPLY_KEYBOARD = {
 
 export const SETTINGS_REPLY_KEYBOARD = {
   keyboard: [
-    [{ text: BTN.MAX }, { text: BTN.QUERY }],
-    [{ text: BTN.AUTO_TOGGLE }, { text: BTN.RESUME_LIST }],
-    [{ text: BTN.PROMPT }, { text: BTN.LOGIN }],
+    [{ text: BTN.MAX }, { text: BTN.AUTO_TOGGLE }],
+    [{ text: BTN.RESUME_LIST }, { text: BTN.PROMPT }],
+    [{ text: BTN.LOGIN }],
+    [{ text: BTN.BACK }],
+  ],
+  resize_keyboard: true,
+  persistent: true,
+}
+
+export const FILTERS_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: BTN.QUERY }],
+    [{ text: BTN.EXCLUSIONS }, { text: BTN.REGION }],
     [{ text: BTN.BACK }],
   ],
   resize_keyboard: true,

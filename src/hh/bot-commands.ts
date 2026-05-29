@@ -1,6 +1,6 @@
 import bot from '@bot'
 import prisma from '@prisma'
-import { BTN, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, SETTINGS_REPLY_KEYBOARD } from './ui.js'
+import { BTN, FILTERS_REPLY_KEYBOARD, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, SETTINGS_REPLY_KEYBOARD } from './ui.js'
 import { getState } from './state.js'
 import { doLogin, handleLogin } from './handlers/auth.js'
 import { handleApply } from './handlers/apply.js'
@@ -23,6 +23,7 @@ const MESSAGE_HANDLERS: Partial<Record<string, MsgHandler>> = {
   [BTN.MY_RESUME]: handleMyResume,
   [BTN.SKIPPED]: handleSkipped,
   [BTN.SETTINGS]: async chatId => { await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: SETTINGS_REPLY_KEYBOARD }) },
+  [BTN.FILTERS]: async chatId => { await bot.sendMessage(chatId, '🔎 Фильтры:', { reply_markup: FILTERS_REPLY_KEYBOARD }) },
   [BTN.INFO]: async chatId => { await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD }) },
   [BTN.BACK]: async chatId => { await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD }) },
 }
