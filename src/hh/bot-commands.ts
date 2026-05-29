@@ -13,6 +13,9 @@ interface UserState {
   awaitingPrompt: boolean
   pendingResumes: ResumeListItem[]
   loginPromptMessageId: number | null
+  queryPromptMessageId: number | null
+  maxPromptMessageId: number | null
+  promptPromptMessageId: number | null
 }
 
 function makeUserState(): UserState {
@@ -24,6 +27,9 @@ function makeUserState(): UserState {
     awaitingPrompt: false,
     pendingResumes: [],
     loginPromptMessageId: null,
+    queryPromptMessageId: null,
+    maxPromptMessageId: null,
+    promptPromptMessageId: null,
   }
 }
 
@@ -300,6 +306,24 @@ export function registerHHCommands() {
         break
       }
 
+      case 'hh_keep_query':
+        state.awaitingQuery = false
+        state.queryPromptMessageId = null
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
+        break
+
+      case 'hh_keep_max':
+        state.awaitingMax = false
+        state.maxPromptMessageId = null
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
+        break
+
+      case 'hh_keep_prompt':
+        state.awaitingPrompt = false
+        state.promptPromptMessageId = null
+        await bot.deleteMessage(chatId, messageId).catch(() => {})
+        break
+
       case 'hh_resume_list':
         await bot.deleteMessage(chatId, messageId).catch(() => {})
         await handleResumeList(chatId)
@@ -343,6 +367,30 @@ export function registerHHCommands() {
 
     const state = getState(chatId)
 
+    const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
+    if (isMenuButton && (state.awaitingEmail || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt)) {
+      state.awaitingEmail = false
+      state.awaitingQuery = false
+      state.awaitingMax = false
+      state.awaitingPrompt = false
+      if (state.loginPromptMessageId) {
+        await bot.deleteMessage(chatId, state.loginPromptMessageId).catch(() => {})
+        state.loginPromptMessageId = null
+      }
+      if (state.queryPromptMessageId) {
+        await bot.deleteMessage(chatId, state.queryPromptMessageId).catch(() => {})
+        state.queryPromptMessageId = null
+      }
+      if (state.maxPromptMessageId) {
+        await bot.deleteMessage(chatId, state.maxPromptMessageId).catch(() => {})
+        state.maxPromptMessageId = null
+      }
+      if (state.promptPromptMessageId) {
+        await bot.deleteMessage(chatId, state.promptPromptMessageId).catch(() => {})
+        state.promptPromptMessageId = null
+      }
+    }
+
     if (state.awaitingEmail) {
       state.awaitingEmail = false
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
@@ -357,6 +405,10 @@ export function registerHHCommands() {
     if (state.awaitingQuery) {
       state.awaitingQuery = false
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      if (state.queryPromptMessageId) {
+        await bot.deleteMessage(chatId, state.queryPromptMessageId).catch(() => {})
+        state.queryPromptMessageId = null
+      }
       const updated = await prisma.settings.update({
         where: { telegramId: chatId },
         data: { searchQuery: msg.text },
@@ -373,6 +425,10 @@ export function registerHHCommands() {
       }
       state.awaitingMax = false
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      if (state.maxPromptMessageId) {
+        await bot.deleteMessage(chatId, state.maxPromptMessageId).catch(() => {})
+        state.maxPromptMessageId = null
+      }
       const updated = await prisma.settings.update({
         where: { telegramId: chatId },
         data: { maxApplies: num },
@@ -384,6 +440,10 @@ export function registerHHCommands() {
     if (state.awaitingPrompt) {
       state.awaitingPrompt = false
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      if (state.promptPromptMessageId) {
+        await bot.deleteMessage(chatId, state.promptPromptMessageId).catch(() => {})
+        state.promptPromptMessageId = null
+      }
       await prisma.user.upsert({
         where: { telegramId: chatId },
         update: { prompt: msg.text },
@@ -405,15 +465,42 @@ export function registerHHCommands() {
       case BTN.QUERY: {
         state.awaitingQuery = true
         const q = await prisma.settings.findFirst({ where: { telegramId: chatId } })
-        await bot.sendMessage(chatId, `🔍 Текущий запрос: ${q?.searchQuery || '--'}`)
-        await bot.sendMessage(chatId, '🔍 Введи новый поисковый запрос:')
+        const currentQuery = q?.searchQuery || '--'
+        const queryMsg = await bot.sendMessage(
+          chatId,
+          `🔍 Текущий запрос: <b>${escapeHtml(currentQuery)}</b>\n\nВведи новый или оставь текущий:`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: `✅ Оставить «${currentQuery}»`, callback_data: 'hh_keep_query' },
+              ]],
+            },
+          },
+        )
+        state.queryPromptMessageId = queryMsg.message_id
         break
       }
 
-      case BTN.MAX:
+      case BTN.MAX: {
         state.awaitingMax = true
-        await bot.sendMessage(chatId, '🔢 Введи максимальное количество откликов (1-50):')
+        const s = await prisma.settings.findFirst({ where: { telegramId: chatId } })
+        const currentMax = s?.maxApplies ?? '--'
+        const maxMsg = await bot.sendMessage(
+          chatId,
+          `🔢 Текущее значение: <b>${currentMax}</b>\n\nВведи новое количество откликов (1–50) или оставь текущее:`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: `✅ Оставить ${currentMax}`, callback_data: 'hh_keep_max' },
+              ]],
+            },
+          },
+        )
+        state.maxPromptMessageId = maxMsg.message_id
         break
+      }
 
       case BTN.AUTO_TOGGLE: {
         const s = getState(chatId)
@@ -446,8 +533,18 @@ export function registerHHCommands() {
       case BTN.PROMPT: {
         state.awaitingPrompt = true
         const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
-        const current = user?.prompt ? `\n\nТекущий:\n<pre>${escapeHtml(user.prompt)}</pre>` : ''
-        await bot.sendMessage(chatId, `📝 Введи новый промт для AI:${current}`, { parse_mode: 'HTML' })
+        const currentPrompt = user?.prompt
+        const promptText = currentPrompt
+          ? `📝 Текущий промт:\n<pre>${escapeHtml(currentPrompt)}</pre>\n\nВведи новый или оставь текущий:`
+          : '📝 Введи промт для AI (пока не задан):'
+        const keepButton = currentPrompt
+          ? [[{ text: '✅ Оставить текущий промт', callback_data: 'hh_keep_prompt' }]]
+          : []
+        const promptMsg = await bot.sendMessage(chatId, promptText, {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: keepButton },
+        })
+        state.promptPromptMessageId = promptMsg.message_id
         break
       }
 
