@@ -1,13 +1,14 @@
 import bot from '@bot'
 import prisma from '@prisma'
-import { BTN, FILTERS_REPLY_KEYBOARD, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, SETTINGS_REPLY_KEYBOARD } from './ui.js'
-import { getState } from './state.js'
-import { doLogin, handleLogin } from './handlers/auth.js'
+import { debugFunc } from '@/hh/handlers/debug'
 import { handleApply } from './handlers/apply.js'
-import { handleStatus, handleSkipped } from './handlers/info.js'
+import { doLogin, handleLogin } from './handlers/auth.js'
+import { handleSkipped, handleStatus } from './handlers/info.js'
+import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
 import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery } from './handlers/settings.js'
-import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
+import { getState } from './state.js'
+import { BTN, FILTERS_REPLY_KEYBOARD, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, SETTINGS_REPLY_KEYBOARD } from './ui.js'
 
 type MsgHandler = (chatId: number) => Promise<void>
 type CallbackHandler = (chatId: number, messageId: number) => Promise<void>
@@ -23,10 +24,11 @@ const MESSAGE_HANDLERS: Partial<Record<string, MsgHandler>> = {
   [BTN.RESUME_LIST]: handleResumeList,
   [BTN.MY_RESUME]: handleMyResume,
   [BTN.SKIPPED]: handleSkipped,
-  [BTN.SETTINGS]: async chatId => { await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: SETTINGS_REPLY_KEYBOARD }) },
-  [BTN.FILTERS]: async chatId => { await bot.sendMessage(chatId, '🔎 Фильтры:', { reply_markup: FILTERS_REPLY_KEYBOARD }) },
-  [BTN.INFO]: async chatId => { await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD }) },
-  [BTN.BACK]: async chatId => { await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD }) },
+  [BTN.SETTINGS]: async (chatId) => { await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: SETTINGS_REPLY_KEYBOARD }) },
+  [BTN.FILTERS]: async (chatId) => { await bot.sendMessage(chatId, '🔎 Фильтры:', { reply_markup: FILTERS_REPLY_KEYBOARD }) },
+  [BTN.INFO]: async (chatId) => { await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD }) },
+  [BTN.BACK]: async (chatId) => { await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD }) },
+  [BTN.REGION]: debugFunc,
 }
 
 const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {

@@ -7,7 +7,7 @@ import { DEFAULT_PROMPT } from './settings.js'
 export async function startOnboarding(chatId: number): Promise<void> {
   await bot.sendMessage(
     chatId,
-    `👋 <b>Давай настроим бота</b> — займёт меньше минуты.\n\nПройдём по двум ключевым параметрам.`,
+    `👋 <b>Давай настроим бота</b> — займёт меньше минуты.\n\nПройдём по ключевым параметрам.`,
     { parse_mode: 'HTML' },
   )
   await showMaxStep(chatId)
@@ -23,8 +23,7 @@ export async function showMaxStep(chatId: number): Promise<void> {
     chatId,
     `🔢 <b>Шаг 1 из 3 — Максимум откликов</b>\n\n`
     + `Сколько вакансий бот обработает за один запуск. Рекомендуем начать с небольшого числа, чтобы проверить письма.\n\n`
-    + `Текущее значение: <b>${current}</b>\n\n`
-    + `Введи число от 1 до 50:`,
+    + `Можно оставить текущее значение: <b>${current}</b> или ввести число в чат от 1 до 50:`,
     {
       parse_mode: 'HTML',
       reply_markup: {
