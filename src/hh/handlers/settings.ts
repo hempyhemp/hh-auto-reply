@@ -44,6 +44,8 @@ export async function handleMax(chatId: number): Promise<void> {
   state.maxPromptMessageId = msg.message_id
 }
 
+export const DEFAULT_PROMPT = 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений. Опирайся на резюме и ничего не выдумывай, чего недостаточно в резюме лучше умолчать. Пиши по короче и простыми словами. В конце письма оставляй все контакты для связи.'
+
 export async function handlePrompt(chatId: number): Promise<void> {
   const state = getState(chatId)
   state.awaitingPrompt = true
@@ -52,12 +54,15 @@ export async function handlePrompt(chatId: number): Promise<void> {
   const text = currentPrompt
     ? `📝 Текущий промт:\n<pre>${escapeHtml(currentPrompt)}</pre>\n\nВведи новый или оставь текущий:`
     : '📝 Введи промт для AI (пока не задан):'
-  const keepButton = currentPrompt
-    ? [[{ text: '✅ Оставить текущий промт', callback_data: 'hh_keep_prompt' }]]
-    : []
+  const buttons: { text: string; callback_data: string }[] = []
+  if (currentPrompt) {
+    buttons.push({ text: '✅ Оставить текущий', callback_data: 'hh_keep_prompt' })
+    if (currentPrompt !== DEFAULT_PROMPT)
+      buttons.push({ text: '🔄 Вернуть дефолтный', callback_data: 'hh_reset_prompt' })
+  }
   const msg = await bot.sendMessage(chatId, text, {
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: keepButton },
+    reply_markup: { inline_keyboard: buttons.length ? [buttons] : [] },
   })
   state.promptPromptMessageId = msg.message_id
 }

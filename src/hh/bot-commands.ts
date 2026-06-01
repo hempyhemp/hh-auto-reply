@@ -6,7 +6,7 @@ import { doLogin, handleLogin } from './handlers/auth.js'
 import { handleApply } from './handlers/apply.js'
 import { handleStatus, handleSkipped } from './handlers/info.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
-import { handleAutoToggle, handleMax, handlePrompt, handleQuery } from './handlers/settings.js'
+import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery } from './handlers/settings.js'
 
 type MsgHandler = (chatId: number) => Promise<void>
 type CallbackHandler = (chatId: number, messageId: number) => Promise<void>
@@ -66,6 +66,14 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     state.awaitingPrompt = false
     state.promptPromptMessageId = null
     await bot.deleteMessage(chatId, messageId).catch(() => {})
+  },
+  hh_reset_prompt: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.awaitingPrompt = false
+    state.promptPromptMessageId = null
+    await prisma.user.update({ where: { telegramId: chatId }, data: { prompt: DEFAULT_PROMPT } })
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await bot.sendMessage(chatId, '✅ Промт сброшен на дефолтный')
   },
   hh_resume_list: async (chatId, messageId) => {
     await bot.deleteMessage(chatId, messageId).catch(() => {})
