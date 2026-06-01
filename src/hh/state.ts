@@ -13,6 +13,9 @@ export interface UserState {
   queryPromptMessageId: number | null
   maxPromptMessageId: number | null
   promptPromptMessageId: number | null
+  onboardingStep: 'max' | 'query' | 'prompt' | null
+  onboardingMsgId: number | null
+  onboardingAfterResume: boolean
 }
 
 function makeUserState(): UserState {
@@ -28,6 +31,9 @@ function makeUserState(): UserState {
     queryPromptMessageId: null,
     maxPromptMessageId: null,
     promptPromptMessageId: null,
+    onboardingStep: null,
+    onboardingMsgId: null,
+    onboardingAfterResume: false,
   }
 }
 

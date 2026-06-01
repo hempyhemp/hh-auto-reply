@@ -7,6 +7,7 @@ import { handleApply } from './handlers/apply.js'
 import { handleStatus, handleSkipped } from './handlers/info.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
 import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery } from './handlers/settings.js'
+import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
 
 type MsgHandler = (chatId: number) => Promise<void>
 type CallbackHandler = (chatId: number, messageId: number) => Promise<void>
@@ -75,6 +76,28 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     await bot.deleteMessage(chatId, messageId).catch(() => {})
     await bot.sendMessage(chatId, '✅ Промт сброшен на дефолтный')
   },
+  ob_skip_max: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await showQueryStep(chatId)
+  },
+  ob_skip_query: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await showResumeInfo(chatId)
+    await showPromptStep(chatId)
+  },
+  ob_skip_prompt: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await finishOnboarding(chatId)
+  },
   hh_resume_list: async (chatId, messageId) => {
     await bot.deleteMessage(chatId, messageId).catch(() => {})
     await handleResumeList(chatId)
@@ -88,11 +111,14 @@ async function clearAwaitingState(chatId: number): Promise<void> {
     state.queryPromptMessageId,
     state.maxPromptMessageId,
     state.promptPromptMessageId,
+    state.onboardingMsgId,
   ]
   state.awaitingEmail = false
   state.awaitingQuery = false
   state.awaitingMax = false
   state.awaitingPrompt = false
+  state.onboardingStep = null
+  state.onboardingMsgId = null
   state.loginPromptMessageId = null
   state.queryPromptMessageId = null
   state.maxPromptMessageId = null
@@ -142,11 +168,60 @@ export function registerHHCommands() {
       return
     }
 
-    const isAwaiting = state.awaitingEmail || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt
+    const isAwaiting = state.awaitingEmail || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.onboardingStep !== null
     const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
 
     if (isMenuButton && isAwaiting) {
       await clearAwaitingState(chatId)
+    }
+
+    if (state.onboardingStep === 'max') {
+      const num = Number(msg.text)
+      if (Number.isNaN(num) || num < 1 || num > 50) {
+        await bot.sendMessage(chatId, '❌ Введи число от 1 до 50:')
+        return
+      }
+      state.onboardingStep = null
+      if (state.onboardingMsgId) {
+        await bot.deleteMessage(chatId, state.onboardingMsgId).catch(() => {})
+        state.onboardingMsgId = null
+      }
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      await prisma.settings.update({ where: { telegramId: chatId }, data: { maxApplies: num } })
+      await bot.sendMessage(chatId, `✅ Макс откликов: ${num}`)
+      await showQueryStep(chatId)
+      return
+    }
+
+    if (state.onboardingStep === 'query') {
+      state.onboardingStep = null
+      if (state.onboardingMsgId) {
+        await bot.deleteMessage(chatId, state.onboardingMsgId).catch(() => {})
+        state.onboardingMsgId = null
+      }
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      const updated = await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: msg.text } })
+      await bot.sendMessage(chatId, `✅ Запрос: «${updated.searchQuery}»`)
+      await showResumeInfo(chatId)
+      await showPromptStep(chatId)
+      return
+    }
+
+    if (state.onboardingStep === 'prompt') {
+      state.onboardingStep = null
+      if (state.onboardingMsgId) {
+        await bot.deleteMessage(chatId, state.onboardingMsgId).catch(() => {})
+        state.onboardingMsgId = null
+      }
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      await prisma.user.upsert({
+        where: { telegramId: chatId },
+        update: { prompt: msg.text },
+        create: { telegramId: chatId, prompt: msg.text, Settings: { create: {} } },
+      })
+      await bot.sendMessage(chatId, '✅ Промт сохранён')
+      await finishOnboarding(chatId)
+      return
     }
 
     if (state.awaitingEmail) {

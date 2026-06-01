@@ -1,8 +1,8 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import { listResumes, login, saveResume } from '../scraper.js'
-import { MAIN_REPLY_KEYBOARD } from '../ui.js'
 import { getState } from '../state.js'
+import { startOnboarding } from './onboarding.js'
 import type { ResumeListItem } from '../types.js'
 
 export async function doLogin(chatId: number, email: string): Promise<void> {
@@ -25,20 +25,21 @@ export async function doLogin(chatId: number, email: string): Promise<void> {
       await bot.sendMessage(chatId, '⚠️ Не удалось загрузить резюме — выбери вручную через меню')
     }
 
-    await bot.sendMessage(chatId, '✅ Вход выполнен!', { reply_markup: MAIN_REPLY_KEYBOARD })
+    await bot.sendMessage(chatId, '✅ Вход выполнен!')
 
-    if (resumes === null) {
-      // таймаут при загрузке резюме
-    }
-    else if (resumes.length === 0) {
-      await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
+    if (resumes === null || resumes.length === 0) {
+      if (resumes?.length === 0)
+        await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
+      await startOnboarding(chatId)
     }
     else if (resumes.length === 1) {
       await saveResume(chatId, resumes[0])
       await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
+      await startOnboarding(chatId)
     }
     else {
       state.pendingResumes = resumes
+      state.onboardingAfterResume = true
       await bot.sendMessage(chatId, '📄 Выбери резюме:', {
         reply_markup: {
           inline_keyboard: [

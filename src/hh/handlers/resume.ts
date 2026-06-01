@@ -3,6 +3,7 @@ import prisma from '@prisma'
 import { listResumes, NoResumeError, saveResume } from '../scraper.js'
 import { getState } from '../state.js'
 import { escapeHtml, NO_RESUME_MARKUP, safeEdit } from '../ui.js'
+import { startOnboarding } from './onboarding.js'
 
 const log = createLogger('resume')
 
@@ -97,6 +98,10 @@ export async function handleResumePick(chatId: number, messageId: number, idx: n
     chat_id: chatId,
     message_id: messageId,
     reply_markup: { inline_keyboard: [] },
-    // reply_markup: BACK_MARKUP,
   })
+
+  if (state.onboardingAfterResume) {
+    state.onboardingAfterResume = false
+    await startOnboarding(chatId)
+  }
 }
