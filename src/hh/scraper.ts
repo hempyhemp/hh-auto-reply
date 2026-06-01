@@ -334,9 +334,16 @@ export async function applyToJobs(
     )
 
     let appliedCount = 0
+    let consecutiveSkips = 0
+    const MAX_CONSECUTIVE_SKIPS = 10
     for (const vacancy of vacancies) {
       if (appliedCount >= maxApplies)
         break
+      if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
+        log.warn(`Остановлено: ${MAX_CONSECUTIVE_SKIPS} пропусков подряд`)
+        await keep(`⚠️ Остановлено: ${MAX_CONSECUTIVE_SKIPS} вакансий подряд пропущено`)
+        break
+      }
       const ref: VacancyRef = { title: vacancy.title, href: vacancy.href }
 
       if (knownSkipped.has(vacancy.href)) {
@@ -355,12 +362,16 @@ export async function applyToJobs(
 
         if (!description) {
           results.skipped.push(ref)
+          appliedCount++
+          consecutiveSkips++
           continue
         }
 
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
         if (!applyBtn) {
           results.skipped.push(vacancy)
+          appliedCount++
+          consecutiveSkips++
           continue
         }
 
@@ -372,8 +383,11 @@ export async function applyToJobs(
         if (relocationConfirm)
           await relocationConfirm.click()
 
-        if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results))
+        if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results)) {
+          appliedCount++
+          consecutiveSkips++
           continue
+        }
 
         // console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
         await keep(`✍️ Генерирую письмо: ${vacancy.title}`)
@@ -487,6 +501,7 @@ export async function applyToJobs(
 
         results.applied.push(ref)
         appliedCount++
+        consecutiveSkips = 0
       }
       catch (err) {
         results.errors.push({ ...ref, message: (err as Error).message })
