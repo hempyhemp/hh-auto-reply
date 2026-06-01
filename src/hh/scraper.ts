@@ -4,9 +4,9 @@ import type { ApplyOptions, ApplyResult, ResumeListItem, VacancyRef } from './ty
 import type { StatusReporter } from './ui.js'
 import bot from '@bot'
 import prisma from '@prisma'
+import { createLogger } from '@/logger'
 import { createMessage } from '@/openai'
 import { loadSession, newStealthContext, randomDelay, randomScroll, withBrowser } from './browser.js'
-import { createLogger } from '@/logger'
 import { createStatusReporter, escapeHtml } from './ui.js'
 
 const log = createLogger('scraper')
@@ -62,6 +62,48 @@ async function skipIfQuestionnaire(
   })
   results.skipped.push(ref)
   return true
+}
+
+export async function loginByPhone(phone: string, chatId: number): Promise<void> {
+  await withBrowser(async (browser) => {
+    if (!browser.version()) {
+      log.error('browser error')
+      return
+    }
+
+    const context = await newStealthContext(browser)
+    const page = await context.newPage()
+
+    await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
+
+    await page.click('[data-qa="submit-button"]')
+    await page.waitForTimeout(randomDelay())
+
+    await page.fill('[data-qa="magritte-phone-input-national-number-input"]', phone)
+    await page.waitForTimeout(randomDelay())
+
+    await page.click('[data-qa="submit-button"]')
+    await page.waitForTimeout(randomDelay())
+
+    await bot.sendMessage(chatId, '🔑 Введи код из SMS')
+    await page.waitForTimeout(randomDelay())
+
+    await page.click('[data-qa="applicant-login-input-otp"]')
+    const otp = await waitForOtp(chatId)
+    await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
+
+    await page.waitForTimeout(randomDelay())
+    await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
+
+    const cookies = await context.cookies()
+    await prisma.user.upsert({
+      where: { telegramId: chatId },
+      update: { session: JSON.stringify(cookies, null, 2) },
+      create: { telegramId: chatId, session: JSON.stringify(cookies, null, 2), Settings: { create: {} } },
+    })
+
+    await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
+  })
 }
 
 export async function login(email: string, chatId: number): Promise<void> {

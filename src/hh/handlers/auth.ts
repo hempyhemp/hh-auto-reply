@@ -1,9 +1,46 @@
 import bot from '@bot'
 import prisma from '@prisma'
-import { listResumes, login, saveResume } from '../scraper.js'
+import { listResumes, login, loginByPhone, saveResume } from '../scraper.js'
 import { getState } from '../state.js'
 import { startOnboarding } from './onboarding.js'
 import type { ResumeListItem } from '../types.js'
+
+async function handlePostLogin(chatId: number): Promise<void> {
+  const state = getState(chatId)
+
+  let resumes: ResumeListItem[] | null = null
+  try {
+    resumes = await listResumes(chatId)
+  }
+  catch {
+    await bot.sendMessage(chatId, '⚠️ Не удалось загрузить резюме — выбери вручную через меню')
+  }
+
+  await bot.sendMessage(chatId, '✅ Вход выполнен!')
+
+  if (resumes === null || resumes.length === 0) {
+    if (resumes?.length === 0)
+      await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
+    await startOnboarding(chatId)
+  }
+  else if (resumes.length === 1) {
+    await saveResume(chatId, resumes[0])
+    await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
+    await startOnboarding(chatId)
+  }
+  else {
+    state.pendingResumes = resumes
+    state.onboardingAfterResume = true
+    await bot.sendMessage(chatId, '📄 Выбери резюме:', {
+      reply_markup: {
+        inline_keyboard: [
+          ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
+          [{ text: '◀️ Закрыть', callback_data: 'hh_back' }],
+        ],
+      },
+    })
+  }
+}
 
 export async function doLogin(chatId: number, email: string): Promise<void> {
   await bot.sendMessage(chatId, '🔄 Логинюсь...')
@@ -14,41 +51,23 @@ export async function doLogin(chatId: number, email: string): Promise<void> {
       update: { hhEmail: email },
       create: { telegramId: chatId, hhEmail: email, Settings: { create: {} } },
     })
+    await handlePostLogin(chatId)
+  }
+  catch (e) {
+    await bot.sendMessage(chatId, `❌ Ошибка: ${(e as Error).message}`)
+  }
+}
 
-    const state = getState(chatId)
-
-    let resumes: ResumeListItem[] | null = null
-    try {
-      resumes = await listResumes(chatId)
-    }
-    catch {
-      await bot.sendMessage(chatId, '⚠️ Не удалось загрузить резюме — выбери вручную через меню')
-    }
-
-    await bot.sendMessage(chatId, '✅ Вход выполнен!')
-
-    if (resumes === null || resumes.length === 0) {
-      if (resumes?.length === 0)
-        await bot.sendMessage(chatId, '⚠️ Резюме не найдены. Создайте резюме на hh.ru')
-      await startOnboarding(chatId)
-    }
-    else if (resumes.length === 1) {
-      await saveResume(chatId, resumes[0])
-      await bot.sendMessage(chatId, `✅ Резюме сохранено: ${resumes[0].title}`)
-      await startOnboarding(chatId)
-    }
-    else {
-      state.pendingResumes = resumes
-      state.onboardingAfterResume = true
-      await bot.sendMessage(chatId, '📄 Выбери резюме:', {
-        reply_markup: {
-          inline_keyboard: [
-            ...resumes.map((r, i) => [{ text: r.title, callback_data: `hh_resume_pick_${i}` }]),
-            [{ text: '◀️ Закрыть', callback_data: 'hh_back' }],
-          ],
-        },
-      })
-    }
+export async function doLoginByPhone(chatId: number, phone: string): Promise<void> {
+  await bot.sendMessage(chatId, '🔄 Логинюсь...')
+  try {
+    await loginByPhone(phone, chatId)
+    await prisma.user.upsert({
+      where: { telegramId: chatId },
+      update: { hhPhone: phone },
+      create: { telegramId: chatId, hhPhone: phone, Settings: { create: {} } },
+    })
+    await handlePostLogin(chatId)
   }
   catch (e) {
     await bot.sendMessage(chatId, `❌ Ошибка: ${(e as Error).message}`)
@@ -94,5 +113,26 @@ export async function handleLoginByEmail(chatId: number): Promise<void> {
 }
 
 export async function handleLoginByPhone(chatId: number): Promise<void> {
-  await bot.sendMessage(chatId, '📱 Авторизация по телефону — скоро будет доступна')
+  const state = getState(chatId)
+  const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+  state.awaitingPhone = true
+
+  if (!user?.hhPhone) {
+    await bot.sendMessage(chatId, '📱 Введи номер телефона (например: +79001234567):')
+  }
+  else {
+    const prompt = await bot.sendMessage(
+      chatId,
+      `📱 Текущий телефон: <b>${user.hhPhone}</b>\n\nИспользовать его или введи другой:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: `✅ Войти как ${user.hhPhone}`, callback_data: 'hh_login_use_current_phone' },
+          ]],
+        },
+      },
+    )
+    state.loginPromptMessageId = prompt.message_id
+  }
 }

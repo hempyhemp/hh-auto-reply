@@ -2,7 +2,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import { debugFunc } from '@/hh/handlers/debug'
 import { handleApply } from './handlers/apply.js'
-import { doLogin, handleLogin, handleLoginByEmail, handleLoginByPhone } from './handlers/auth.js'
+import { doLogin, doLoginByPhone, handleLogin, handleLoginByEmail, handleLoginByPhone } from './handlers/auth.js'
 import { handleSkipped, handleStatus } from './handlers/info.js'
 import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
@@ -63,6 +63,19 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
       return
     }
     await doLogin(chatId, user.hhEmail)
+  },
+  hh_login_use_current_phone: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.awaitingPhone = false
+    state.loginPromptMessageId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+    if (!user?.hhPhone) {
+      await bot.sendMessage(chatId, '❌ Телефон не найден, введи вручную')
+      state.awaitingPhone = true
+      return
+    }
+    await doLoginByPhone(chatId, user.hhPhone)
   },
   hh_keep_query: async (chatId, messageId) => {
     const state = getState(chatId)
@@ -249,6 +262,17 @@ export function registerHHCommands() {
         state.loginPromptMessageId = null
       }
       await doLogin(chatId, msg.text)
+      return
+    }
+
+    if (state.awaitingPhone) {
+      state.awaitingPhone = false
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      if (state.loginPromptMessageId) {
+        await bot.deleteMessage(chatId, state.loginPromptMessageId).catch(() => {})
+        state.loginPromptMessageId = null
+      }
+      await doLoginByPhone(chatId, msg.text)
       return
     }
 
