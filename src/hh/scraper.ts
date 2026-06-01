@@ -1,5 +1,5 @@
 import type { Message } from 'node-telegram-bot-api'
-import type { Page } from 'playwright'
+import type { BrowserContext, Page } from 'playwright'
 import type { ApplyOptions, ApplyResult, ResumeListItem, VacancyRef } from './types.js'
 import type { StatusReporter } from './ui.js'
 import bot from '@bot'
@@ -28,6 +28,39 @@ function waitForOtp(chatId: number): Promise<string> {
     }
     bot.on('message', handler)
   })
+}
+
+async function handleOtpFlow(page: Page, context: BrowserContext, chatId: number, initialMessage: string): Promise<void> {
+  await page.click('[data-qa="applicant-login-input-otp"]')
+
+  let message = initialMessage
+  while (true) {
+    await bot.sendMessage(chatId, message)
+    const otp = await waitForOtp(chatId)
+
+    await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
+
+    const outcome = await Promise.race([
+      page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 }).then(() => 'success' as const),
+      page.waitForSelector('[data-qa="magritte-pincode-input-field"][aria-invalid="true"]', { timeout: 8000 }).then(() => 'error' as const),
+    ]).catch(() => 'timeout' as const)
+
+    if (outcome === 'success')
+      break
+    if (outcome === 'error') {
+      message = '❌ Неверный код. Введи код ещё раз:'
+      continue
+    }
+    throw new Error('OTP verification timed out')
+  }
+
+  const cookies = await context.cookies()
+  await prisma.user.upsert({
+    where: { telegramId: chatId },
+    update: { session: JSON.stringify(cookies, null, 2) },
+    create: { telegramId: chatId, session: JSON.stringify(cookies, null, 2), Settings: { create: {} } },
+  })
+  await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
 }
 
 const APPLY_OUTCOME_SELECTOR = [
@@ -75,34 +108,14 @@ export async function loginByPhone(phone: string, chatId: number): Promise<void>
     const page = await context.newPage()
 
     await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
-
     await page.click('[data-qa="submit-button"]')
     await page.waitForTimeout(randomDelay())
-
     await page.fill('[data-qa="magritte-phone-input-national-number-input"]', phone)
     await page.waitForTimeout(randomDelay())
-
     await page.click('[data-qa="submit-button"]')
     await page.waitForTimeout(randomDelay())
 
-    await bot.sendMessage(chatId, '🔑 Введи код из SMS')
-    await page.waitForTimeout(randomDelay())
-
-    await page.click('[data-qa="applicant-login-input-otp"]')
-    const otp = await waitForOtp(chatId)
-    await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
-
-    await page.waitForTimeout(randomDelay())
-    await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
-
-    const cookies = await context.cookies()
-    await prisma.user.upsert({
-      where: { telegramId: chatId },
-      update: { session: JSON.stringify(cookies, null, 2) },
-      create: { telegramId: chatId, session: JSON.stringify(cookies, null, 2), Settings: { create: {} } },
-    })
-
-    await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
+    await handleOtpFlow(page, context, chatId, '🔑 Введи код из SMS')
   })
 }
 
@@ -117,37 +130,16 @@ export async function login(email: string, chatId: number): Promise<void> {
     const page = await context.newPage()
 
     await page.goto('https://hh.ru/account/login', { waitUntil: 'domcontentloaded' })
-
     await page.click('[data-qa="submit-button"]')
     await page.waitForTimeout(randomDelay())
-
     await page.click('label:has([data-qa="credential-type-EMAIL"])')
     await page.waitForTimeout(randomDelay())
-
     await page.fill('[data-qa="applicant-login-input-email"]', email)
     await page.waitForTimeout(randomDelay())
-
     await page.click('[data-qa="submit-button"]')
     await page.waitForTimeout(randomDelay())
 
-    await bot.sendMessage(chatId, '🔑 Введи код из email')
-    await page.waitForTimeout(randomDelay())
-
-    await page.click('[data-qa="applicant-login-input-otp"]')
-    const otp = await waitForOtp(chatId)
-    await page.fill('[data-qa="applicant-login-input-otp"] input', otp)
-
-    await page.waitForTimeout(randomDelay())
-    await page.waitForSelector('[data-qa="profileAndResumes-button"]', { timeout: 15000 })
-
-    const cookies = await context.cookies()
-    await prisma.user.upsert({
-      where: { telegramId: chatId },
-      update: { session: JSON.stringify(cookies, null, 2) },
-      create: { telegramId: chatId, session: JSON.stringify(cookies, null, 2), Settings: { create: {} } },
-    })
-
-    await bot.sendMessage(chatId, cookies.length > 0 ? '✅ Авторизация выполнена' : '❌ Произошла ошибка')
+    await handleOtpFlow(page, context, chatId, '🔑 Введи код из email')
   })
 }
 
