@@ -304,6 +304,8 @@ export async function applyToJobs(
           return Number(pageParam ?? 0)
         })),
       )
+      log.divider('CollectPageVacancies')
+      log.info('URL:', page.url())
       log.info('Max page:', maxPage)
       for (let p = 1; p <= maxPage; p++) {
         const pageUrl = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=100&page=${p}`

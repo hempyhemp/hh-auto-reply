@@ -1,25 +1,25 @@
-const RESET = '\x1b[0m'
-const BOLD = '\x1b[1m'
-const DIM = '\x1b[2m'
+const RESET = '\x1B[0m'
+const BOLD = '\x1B[1m'
+const DIM = '\x1B[2m'
 
 const colors = {
-  gray:    '\x1b[90m',
-  green:   '\x1b[32m',
-  yellow:  '\x1b[33m',
-  red:     '\x1b[31m',
-  cyan:    '\x1b[36m',
-  magenta: '\x1b[35m',
-  blue:    '\x1b[34m',
-  white:   '\x1b[37m',
+  gray: '\x1B[97m',
+  green: '\x1B[92m',
+  yellow: '\x1B[93m',
+  red: '\x1B[91m',
+  cyan: '\x1B[96m',
+  magenta: '\x1B[95m',
+  blue: '\x1B[94m',
+  white: '\x1B[97m',
 }
 
 const LEVELS = {
-  info:    { icon: '●', color: colors.cyan,    label: 'INFO ' },
-  success: { icon: '✔', color: colors.green,   label: 'OK   ' },
-  warn:    { icon: '▲', color: colors.yellow,  label: 'WARN ' },
-  error:   { icon: '✖', color: colors.red,     label: 'ERROR' },
-  debug:   { icon: '◆', color: colors.magenta, label: 'DEBUG' },
-  llm:     { icon: '◈', color: colors.blue,    label: 'LLM  ' },
+  info: { icon: '●', color: colors.cyan, label: 'INFO ' },
+  success: { icon: '✔', color: colors.green, label: 'OK   ' },
+  warn: { icon: '▲', color: colors.yellow, label: 'WARN ' },
+  error: { icon: '✖', color: colors.red, label: 'ERROR' },
+  debug: { icon: '◆', color: colors.magenta, label: 'DEBUG' },
+  llm: { icon: '◈', color: colors.blue, label: 'LLM  ' },
 } as const
 
 type Level = keyof typeof LEVELS
@@ -39,7 +39,7 @@ function formatTag(tag: string): string {
 
 function formatArgs(args: unknown[]): string {
   return args
-    .map((a) =>
+    .map(a =>
       typeof a === 'object' && a !== null
         ? JSON.stringify(a, null, 2)
         : String(a),
@@ -56,26 +56,27 @@ function print(level: Level, tag: string, args: unknown[]): void {
     `${color}${formatArgs(args)}${RESET}`,
   ]
   if (level === 'error') {
-    process.stderr.write(parts.join(' ') + '\n')
-  } else {
-    process.stdout.write(parts.join(' ') + '\n')
+    process.stderr.write(`${parts.join(' ')}\n`)
+  }
+  else {
+    process.stdout.write(`${parts.join(' ')}\n`)
   }
 }
 
 export function createLogger(tag: string) {
   return {
-    info:    (...args: unknown[]) => print('info',    tag, args),
-    ok:      (...args: unknown[]) => print('success', tag, args),
-    warn:    (...args: unknown[]) => print('warn',    tag, args),
-    error:   (...args: unknown[]) => print('error',   tag, args),
-    debug:   (...args: unknown[]) => print('debug',   tag, args),
-    llm:     (...args: unknown[]) => print('llm',     tag, args),
+    info: (...args: unknown[]) => print('info', tag, args),
+    ok: (...args: unknown[]) => print('success', tag, args),
+    warn: (...args: unknown[]) => print('warn', tag, args),
+    error: (...args: unknown[]) => print('error', tag, args),
+    debug: (...args: unknown[]) => print('debug', tag, args),
+    llm: (...args: unknown[]) => print('llm', tag, args),
     divider: (label?: string) => {
       const line = '─'.repeat(58)
       const text = label
         ? `${DIM}${colors.gray}┌─ ${label} ${'─'.repeat(Math.max(0, 54 - label.length))}${RESET}`
         : `${DIM}${colors.gray}${line}${RESET}`
-      process.stdout.write(text + '\n')
+      process.stdout.write(`${text}\n`)
     },
   }
 }
