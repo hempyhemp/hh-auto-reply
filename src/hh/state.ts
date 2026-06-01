@@ -5,10 +5,12 @@ export interface UserState {
   autoCron: ScheduledTask | null
   isApplying: boolean
   awaitingEmail: boolean
+  awaitingPhone: boolean
   awaitingQuery: boolean
   awaitingMax: boolean
   awaitingPrompt: boolean
   pendingResumes: ResumeListItem[]
+  loginMethodMsgId: number | null
   loginPromptMessageId: number | null
   queryPromptMessageId: number | null
   maxPromptMessageId: number | null
@@ -23,10 +25,12 @@ function makeUserState(): UserState {
     autoCron: null,
     isApplying: false,
     awaitingEmail: false,
+    awaitingPhone: false,
     awaitingQuery: false,
     awaitingMax: false,
     awaitingPrompt: false,
     pendingResumes: [],
+    loginMethodMsgId: null,
     loginPromptMessageId: null,
     queryPromptMessageId: null,
     maxPromptMessageId: null,

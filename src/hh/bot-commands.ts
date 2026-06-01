@@ -2,7 +2,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import { debugFunc } from '@/hh/handlers/debug'
 import { handleApply } from './handlers/apply.js'
-import { doLogin, handleLogin } from './handlers/auth.js'
+import { doLogin, handleLogin, handleLoginByEmail, handleLoginByPhone } from './handlers/auth.js'
 import { handleSkipped, handleStatus } from './handlers/info.js'
 import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
@@ -38,6 +38,18 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
   hh_login: async (chatId, messageId) => {
     await bot.deleteMessage(chatId, messageId).catch(() => {})
     await handleLogin(chatId)
+  },
+  hh_login_method_email: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.loginMethodMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await handleLoginByEmail(chatId)
+  },
+  hh_login_method_phone: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.loginMethodMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await handleLoginByPhone(chatId)
   },
   hh_login_use_current: async (chatId, messageId) => {
     const state = getState(chatId)
@@ -109,6 +121,7 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
 async function clearAwaitingState(chatId: number): Promise<void> {
   const state = getState(chatId)
   const msgIds = [
+    state.loginMethodMsgId,
     state.loginPromptMessageId,
     state.queryPromptMessageId,
     state.maxPromptMessageId,
@@ -116,11 +129,13 @@ async function clearAwaitingState(chatId: number): Promise<void> {
     state.onboardingMsgId,
   ]
   state.awaitingEmail = false
+  state.awaitingPhone = false
   state.awaitingQuery = false
   state.awaitingMax = false
   state.awaitingPrompt = false
   state.onboardingStep = null
   state.onboardingMsgId = null
+  state.loginMethodMsgId = null
   state.loginPromptMessageId = null
   state.queryPromptMessageId = null
   state.maxPromptMessageId = null
@@ -170,7 +185,7 @@ export function registerHHCommands() {
       return
     }
 
-    const isAwaiting = state.awaitingEmail || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.onboardingStep !== null
+    const isAwaiting = state.awaitingEmail || state.awaitingPhone || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.onboardingStep !== null
     const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
 
     if (isMenuButton && isAwaiting) {

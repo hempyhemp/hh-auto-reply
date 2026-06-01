@@ -57,6 +57,19 @@ export async function doLogin(chatId: number, email: string): Promise<void> {
 
 export async function handleLogin(chatId: number): Promise<void> {
   const state = getState(chatId)
+  const msg = await bot.sendMessage(chatId, '🔐 Выбери способ входа:', {
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '📧 Email', callback_data: 'hh_login_method_email' },
+        { text: '📱 Телефон', callback_data: 'hh_login_method_phone' },
+      ]],
+    },
+  })
+  state.loginMethodMsgId = msg.message_id
+}
+
+export async function handleLoginByEmail(chatId: number): Promise<void> {
+  const state = getState(chatId)
   const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
   state.awaitingEmail = true
 
@@ -78,4 +91,8 @@ export async function handleLogin(chatId: number): Promise<void> {
     )
     state.loginPromptMessageId = prompt.message_id
   }
+}
+
+export async function handleLoginByPhone(chatId: number): Promise<void> {
+  await bot.sendMessage(chatId, '📱 Авторизация по телефону — скоро будет доступна')
 }
