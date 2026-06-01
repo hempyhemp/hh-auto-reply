@@ -216,6 +216,24 @@ export async function saveResume(chatId: number, resumeItem: ResumeListItem): Pr
   })
 }
 
+async function collectPageVacancies(page: Page) {
+  return page.$$eval(
+    '[data-qa="vacancy-serp__vacancy"]',
+    (cards) => {
+      return cards
+        .filter(card => card.querySelector('[data-qa="vacancy-serp__vacancy_response"]') !== null)
+        .map((card) => {
+          const titleEl = card.querySelector('[data-qa="serp-item__title"]') as HTMLAnchorElement | null
+          return {
+            href: titleEl?.href ?? '',
+            title: titleEl?.textContent?.trim() ?? '',
+          }
+        })
+        .filter(v => v.href)
+    },
+  )
+}
+
 export async function applyToJobs(
   { query, area = 1, maxApplies = 10 }: ApplyOptions,
   { chatId, reporter }: { chatId: number, reporter: StatusReporter },
@@ -228,23 +246,36 @@ export async function applyToJobs(
 
     await loadSession(page, chatId)
 
-    const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&area=${area}`
+    const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=50&page=0` // &area=${area}
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('[data-qa="serp-item__title"]', { timeout: 10000 }).catch(() => null)
-
+    await page.pause()
     if (!await page.$('[data-qa="profileAndResumes-button"]')) {
       return { ...results, error: 'Не авторизован. Выполните login' }
     }
 
     await status('✅ Авторизация выполнена')
 
-    const vacancies = await page.$$eval(
-      '[data-qa="serp-item__title"]',
-      links => links.map(a => ({
-        href: (a as HTMLAnchorElement).href,
-        title: a.textContent?.trim() ?? '',
-      })),
-    )
+    const vacancies = await collectPageVacancies(page)
+
+    const pagerBlock = await page.$('[data-qa="pager-block"]')
+    if (pagerBlock) {
+      const maxPage = await page.$$eval(
+        '[data-qa="pager-block"] [data-qa="pager-page"]',
+        links => Math.max(...links.map((a) => {
+          const pageParam = new URL((a as HTMLAnchorElement).href).searchParams.get('page')
+          return Number(pageParam ?? 0)
+        })),
+      )
+      console.log('[applyToJobs] Max page:', maxPage)
+      for (let p = 1; p <= maxPage; p++) {
+        const pageUrl = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=50&page=${p}`
+        await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
+        await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
+        const more = await collectPageVacancies(page)
+        vacancies.push(...more)
+      }
+    }
 
     await keep(`✅ Вакансий найдено: ${vacancies.length}`)
 
@@ -297,6 +328,10 @@ export async function applyToJobs(
         await randomScroll(page)
 
         await applyBtn.click()
+
+        const relocationConfirm = await page.waitForSelector('[data-qa="relocation-warning-confirm"]', { timeout: 2000 }).catch(() => null)
+        if (relocationConfirm)
+          await relocationConfirm.click()
 
         if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results))
           continue
