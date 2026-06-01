@@ -2,6 +2,7 @@ import process from 'node:process'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 // import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
+const log = createLogger('llm')
 
 // export const claude = new Anthropic({
 //   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -55,12 +56,12 @@ export async function test() {
   })
 
   const test = await client.config.providers()
-  console.log(test.data)
+  log.debug('providers', test.data)
 }
 
 export async function askLLM(userMessage: string) {
   const client = await getClient()
-  console.log('askLLM')
+  log.info('askLLM called')
   // Создаём сессию
   const session = await client.session.create({
     body: { title: 'My request' },
@@ -85,20 +86,18 @@ export async function askLLM(userMessage: string) {
 export async function createMessage(resume: string, message: string, prompt?: string) {
   const client = await getClient()
 
-  console.log('[createMessage] client.instance: ', !!client.instance)
+  log.debug('client.instance:', !!client.instance)
   const session = await client.session.create({ body: { title: 'Cover letter' } })
   const sessionId = session.data!.id
 
-  console.log('[createMessage] sessionId: ', sessionId)
+  log.debug('sessionId:', sessionId)
 
   const finalPromt = prompt || 'Ты — помощник по написанию сопроводительных писем. Отвечай только текстом самого письма, без вступлений, ремарок и пояснений. Опирайся на резюме и ничего не выдумывай, чего недостаточно в резюме лучше умолчать. Пиши по короче и простыми словами. В конце письма оставляй все контакты для связи.'
 
   const resumePreview = resume.slice(0, 200).replace(/\n/g, ' ')
-  console.log(`\n${'─'.repeat(60)}`)
-  console.log(`[LLM] 📋 Prompt 1 (system + resume, noReply)`)
-  console.log(`[LLM] system: ${finalPromt.slice(0, 80)}…`)
-  console.log(`[LLM] resume: ${resumePreview}…`)
-  console.log(`${'─'.repeat(60)}`)
+  log.divider('Prompt 1 — system + resume (noReply)')
+  log.llm(`system: ${finalPromt.slice(0, 80)}…`)
+  log.llm(`resume: ${resumePreview}…`)
 
   await client.session.prompt({
     path: { id: sessionId },
@@ -109,10 +108,9 @@ export async function createMessage(resume: string, message: string, prompt?: st
   })
 
   const vacancyPreview = message.slice(0, 300).replace(/\n/g, ' ')
-  console.log(`\n${'─'.repeat(60)}`)
-  console.log(`[LLM] 📝 Prompt 2 (vacancy) → ожидаю ответ…`)
-  console.log(`[LLM] vacancy: ${vacancyPreview}…`)
-  console.log(`${'─'.repeat(60)}`)
+  log.divider('Prompt 2 — vacancy')
+  log.llm(`📝 vacancy → ожидаю ответ…`)
+  log.llm(`vacancy: ${vacancyPreview}…`)
 
   // ${prompt}\n\n
   const result = await client.session.prompt({
@@ -124,16 +122,15 @@ export async function createMessage(resume: string, message: string, prompt?: st
 
   const parts = (result.data?.parts ?? []) as { type: string, text?: string }[]
   const textPart = parts.find(p => p.type === 'text')
-  console.log(`\n${'─'.repeat(60)}`)
-  console.log(`[LLM] ✅ Ответ получен (${textPart?.text?.length ?? 0} символов)`)
-  console.log(`[LLM] ${textPart?.text?.slice(0, 150).replace(/\n/g, ' ') ?? 'null'}…`)
-  console.log(`${'─'.repeat(60)}\n`)
+  log.divider('Ответ получен')
+  log.llm(`✅ ${textPart?.text?.length ?? 0} символов`)
+  log.llm(`${textPart?.text?.slice(0, 150).replace(/\n/g, ' ') ?? 'null'}…`)
 
   try {
     await client.session.delete({ path: { id: sessionId } })
   }
   catch (e) {
-    console.error('[Session cleanup error]:', (e as Error).message)
+    log.error('Session cleanup error:', (e as Error).message)
   }
 
   return textPart?.text ?? null

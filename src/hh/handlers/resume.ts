@@ -4,6 +4,8 @@ import { listResumes, NoResumeError, saveResume } from '../scraper.js'
 import { getState } from '../state.js'
 import { escapeHtml, NO_RESUME_MARKUP, safeEdit } from '../ui.js'
 
+const log = createLogger('resume')
+
 export async function handleResumeList(chatId: number): Promise<void> {
   const state = getState(chatId)
   const loadingMsg = await bot.sendMessage(chatId, '🔄 Загружаю список резюме...')
@@ -11,7 +13,7 @@ export async function handleResumeList(chatId: number): Promise<void> {
   let resumes
   try {
     resumes = await listResumes(chatId)
-    console.log(`[handleResumeList ${chatId}]: ${resumes}`)
+    log.ok(`handleResumeList chatId=${chatId}:`, resumes)
   }
   catch (e) {
     await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {})

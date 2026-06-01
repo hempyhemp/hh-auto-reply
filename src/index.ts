@@ -1,10 +1,13 @@
 // import * as process from 'node:process'
+import './globals.js'
 import bot from '@bot'
 import prisma from '@prisma'
 import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
 
+const log = createLogger('index')
+
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason)
+  log.error('[unhandledRejection]', reason)
 })
 // console.log('hi') //PWDEBUG=1
 registerHHCommands()
@@ -36,4 +39,4 @@ bot.onText(/\/start/, async (msg) => {
   await triggerHHStart(chatId)
 })
 
-console.log('Bot started 🚀')
+log.ok('Bot started 🚀')

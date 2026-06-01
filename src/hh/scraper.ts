@@ -8,6 +8,8 @@ import { createMessage } from '@/openai'
 import { loadSession, newStealthContext, randomDelay, randomScroll, withBrowser } from './browser.js'
 import { createStatusReporter, escapeHtml } from './ui.js'
 
+const log = createLogger('scraper')
+
 export class NoResumeError extends Error {
   constructor() {
     super('no_resume')
@@ -51,7 +53,7 @@ async function skipIfQuestionnaire(
     return false
   const { keep } = createStatusReporter(chatId)
   await keep(`Пропущена вакансия: ${vacancy.title}`)
-  console.log(`[x] ${vacancy.title} hasQuestionnaire`)
+  log.warn(`[x] ${vacancy.title} hasQuestionnaire`)
   await prisma.skippedVacancy.upsert({
     where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
     create: { telegramId: chatId, href: vacancy.href, title: vacancy.title },
@@ -64,7 +66,7 @@ async function skipIfQuestionnaire(
 export async function login(email: string, chatId: number): Promise<void> {
   await withBrowser(async (browser) => {
     if (!browser.version()) {
-      console.log('browser error')
+      log.error('browser error')
       return
     }
 
@@ -157,7 +159,7 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
             }),
           )
 
-          console.log(items.length)
+          log.info('resumes found:', items.length)
         }
         else {
           const href = await cardLinks[0].getAttribute('href') ?? ''
@@ -188,11 +190,11 @@ export async function listResumes(chatId: number): Promise<ResumeListItem[]> {
             })
           }
           catch (e) {
-            console.log(`Failed to fetch resume text for ${item.title}:`, e)
+            log.error(`Failed to fetch resume text for ${item.title}:`, e)
           }
         }
 
-        console.log(items)
+        log.ok('listResumes:', items)
         return items
       }
       catch (e) {
@@ -246,7 +248,7 @@ export async function applyToJobs(
 
     await loadSession(page, chatId)
 
-    const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=50&page=0` // &area=${area}
+    const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=100&page=0` // &area=${area}
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('[data-qa="serp-item__title"]', { timeout: 10000 }).catch(() => null)
     await page.pause()
@@ -267,9 +269,9 @@ export async function applyToJobs(
           return Number(pageParam ?? 0)
         })),
       )
-      console.log('[applyToJobs] Max page:', maxPage)
+      log.info('Max page:', maxPage)
       for (let p = 1; p <= maxPage; p++) {
-        const pageUrl = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=50&page=${p}`
+        const pageUrl = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=100&page=${p}`
         await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
         await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
         const more = await collectPageVacancies(page)
@@ -344,7 +346,7 @@ export async function applyToJobs(
             setTimeout(() => reject(new Error('Letter generation timeout (60s)')), 80000),
           ),
         ]).catch((err: Error) => {
-          console.error('[Letter Error]:', err.message)
+          log.error('Letter Error:', err.message)
           return null
         })
 
@@ -352,11 +354,11 @@ export async function applyToJobs(
           // Выбор резюме
           const currentResumeEl = await page.$('[data-qa="resume-title"]')
           const currentResumeTitle = (await currentResumeEl?.innerText())?.trim() ?? ''
-          console.log('Текущее резюме на странице:', currentResumeTitle)
-          console.log('Ожидаемое резюме из БД:', resume.title)
+          log.debug('Текущее резюме на странице:', currentResumeTitle)
+          log.debug('Ожидаемое резюме из БД:', resume.title)
 
           if (currentResumeTitle !== resume.title) {
-            console.log('Резюме не совпадает, нужно сменить')
+            log.warn('Резюме не совпадает, нужно сменить')
             await currentResumeEl?.click()
             await page.waitForSelector('[data-qa="magritte-select-option-list"]', { timeout: 5000 })
             // await page.pause()
@@ -401,14 +403,14 @@ export async function applyToJobs(
           }
           else {
             const errMsg = 'Not found submit button'
-            console.log(errMsg)
+            log.warn(errMsg)
             results.errors.push({ ...ref, message: errMsg })
             // results.skipped.push(vacancy)
             continue
           }
         }
         else {
-          console.log(`[Debug]: single flow: ${chatId}`)
+          log.debug(`single flow: ${chatId}`)
 
           const letter = await letterPromise
 
@@ -441,7 +443,7 @@ export async function applyToJobs(
           }
           else {
             const errMsg = 'Not found submit button'
-            console.log(errMsg)
+            log.warn(errMsg)
             results.errors.push({ ...ref, message: errMsg })
           }
         }
