@@ -1,5 +1,6 @@
 import bot from '@bot'
 import prisma from '@prisma'
+import { createLogger } from '@/logger'
 import { listResumes, NoResumeError, saveResume } from '../scraper.js'
 import { getState } from '../state.js'
 import { escapeHtml, NO_RESUME_MARKUP, safeEdit } from '../ui.js'

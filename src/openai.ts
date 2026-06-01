@@ -2,6 +2,8 @@ import process from 'node:process'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 // import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
+import { createLogger } from './logger.js'
+
 const log = createLogger('llm')
 
 // export const claude = new Anthropic({

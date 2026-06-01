@@ -6,6 +6,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import { createMessage } from '@/openai'
 import { loadSession, newStealthContext, randomDelay, randomScroll, withBrowser } from './browser.js'
+import { createLogger } from '@/logger'
 import { createStatusReporter, escapeHtml } from './ui.js'
 
 const log = createLogger('scraper')

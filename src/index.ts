@@ -1,8 +1,9 @@
-// import * as process from 'node:process'
-import './globals.js'
 import bot from '@bot'
 import prisma from '@prisma'
+import { createLogger } from './logger.js'
 import { registerHHCommands, triggerHHStart } from './hh/bot-commands.js'
+// import * as process from 'node:process'
+import './globals.js'
 
 const log = createLogger('index')
 
@@ -32,7 +33,7 @@ bot.onText(/\/start/, async (msg) => {
   if (!existingUser) {
     await bot.sendMessage(
       chatId,
-      `👋 Привет, ${msg.from?.first_name ?? 'друг'}!\n\nЭто бот для авто-откликов на hh.ru.\nНачни с логина — нажми 🔑 Логин.`,
+      `👋 Привет, ${msg.from?.first_name ?? 'друг'}!\n\nЭто бот для авто-откликов на hh.ru.\nНачни с логина — нажми 🔑 Войти.`,
     )
   }
 
