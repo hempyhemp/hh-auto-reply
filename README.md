@@ -8,10 +8,10 @@ Telegram-бот для автоматизации откликов на вака
 
 ## Что умеет бот
 
-- **Авторизация через OTP** — входит на hh.ru по email + одноразовый код, сессия (cookies) сохраняется в БД и переиспользуется
+- **Авторизация через OTP** — входит на hh.ru по email или номеру телефона + одноразовый код, сессия (cookies) сохраняется в БД и переиспользуется
 - **Парсинг резюме** — скачивает резюме с hh.ru после логина, сохраняет текстом в БД
 - **Поиск вакансий** — по настраиваемому запросу, с лимитом откликов за сессию
-- **AI-письма** — уникальное сопроводительное письмо под каждую вакансию через LLM (Llama 3.3 70B / Groq)
+- **AI-письма** — уникальное сопроводительное письмо под каждую вакансию через LLM (DeepSeek V4 Flash / OpenRouter)
 - **Пропуск анкет** — вакансии с опросником автоматически пропускаются и логируются
 - **Авто-режим** — cron-задача (пн–пт, 10:00) для ежедневного автозапуска
 - **Полное управление через Telegram** — настройки, промпт, резюме, статус — всё в чате
@@ -25,7 +25,7 @@ Telegram-бот для автоматизации откликов на вака
 | Runtime | Node.js 22+ · TypeScript · ESM |
 | Telegram | node-telegram-bot-api (long polling) |
 | Браузерная автоматизация | Playwright (headless Chromium) |
-| LLM | DeepSeek V4 Flash · OpenRouter · через `@opencode-ai/sdk` |
+| LLM | DeepSeek V4 Flash · OpenRouter · `@opencode-ai/sdk`; Groq (`llama-3.3-70b-versatile`) как запасной |
 | ORM | Prisma 6 · SQLite |
 | Планировщик | node-cron |
 | Контейнеризация | Docker |
@@ -41,7 +41,7 @@ Telegram-бот для автоматизации откликов на вака
         ├─ /start → главное меню
         │
         ├─ Войти на hh.ru
-        │     └─ Playwright открывает браузер, вводит email
+        │     └─ Playwright открывает браузер, вводит email или телефон
         │           └─ OTP-код пользователь присылает в чат
         │                 └─ Сессия (cookies) сохраняется в БД
         │
@@ -51,7 +51,7 @@ Telegram-бот для автоматизации откликов на вака
               └─ Playwright ищет вакансии по запросу
                     └─ Для каждой вакансии:
                           ├─ Парсит описание (название, требования, компания)
-                          ├─ Groq API генерирует письмо (резюме + описание → письмо)
+                          ├─ OpenCode SDK → DeepSeek V4 Flash генерирует письмо (резюме + описание → письмо)
                           ├─ Playwright вставляет письмо и кликает «Откликнуться»
                           └─ Отчёт в Telegram: применено / пропущено / ошибки
 ```
@@ -80,7 +80,7 @@ src/
 ├── index.ts              # точка входа, регистрация хендлеров
 ├── bot-singleton.ts      # singleton TelegramBot (@bot)
 ├── prisma.ts             # singleton PrismaClient (@prisma)
-├── openai.ts             # Groq API через openai-sdk
+├── openai.ts             # LLM: OpenCode SDK (DeepSeek V4 Flash/OpenRouter) + Groq fallback
 └── hh/
     ├── bot-commands.ts   # маршрутизация: handler maps вместо switch
     ├── state.ts          # UserState (awaiting-флаги, cron, pending resumes)
@@ -90,10 +90,12 @@ src/
     ├── types.ts          # общие типы
     └── handlers/
         ├── apply.ts      # запуск поиска и откликов
-        ├── auth.ts       # логин, OTP-флоу
+        ├── auth.ts       # логин (email / телефон), OTP-флоу
         ├── info.ts       # статус, проблемные вакансии
+        ├── onboarding.ts # онбординг нового пользователя
         ├── resume.ts     # список резюме, просмотр, выбор
-        └── settings.ts   # запрос, лимит, промпт, авто-режим
+        ├── settings.ts   # запрос, лимит, промпт, авто-режим
+        └── debug.ts      # отладочные функции
 ```
 
 **Path-алиасы** (tsconfig.json): `@bot`, `@prisma`, `@/*` → `src/*`
@@ -107,7 +109,10 @@ src/
 ```prisma
 model User {
   telegramId  BigInt    @unique
+  username    String?
+  firstName   String?
   hhEmail     String?
+  hhPhone     String?
   session     String?   // cookies hh.ru (JSON)
   prompt      String    // системный промпт для AI
   resumes     Resume[]
@@ -133,7 +138,7 @@ model SkippedVacancy {
   href        String
   title       String
   createdAt   DateTime
-  // @@unique([telegramId, href])
+  @@unique([telegramId, href])
 }
 ```
 
@@ -161,8 +166,8 @@ TG_BOT_TOKEN=1234567890:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # OpenRouter API Key — нужен для DeepSeek V4 Flash (openrouter.ai)
 OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# Groq API Key — legacy, в текущей версии не используется
-# GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Groq API Key — используется функцией askGPT (запасной путь)
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 3. Миграции и запуск
@@ -236,7 +241,7 @@ SQLite-база сохраняется в `./data/` и переживает пе
 | `⏰ Авто` | Вкл/выкл ежедневный cron (пн–пт 10:00) |
 | `📄 Выбрать резюме` | Загрузить список резюме с hh.ru |
 | `📝 Промт` | Настроить системный промпт для AI |
-| `🔑 Войти на hh.ru` | Авторизация (email + OTP) |
+| `🔑 Войти на hh.ru` | Авторизация (email или телефон + OTP) |
 
 **Информация**
 | Кнопка | Действие |
