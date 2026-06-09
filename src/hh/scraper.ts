@@ -261,11 +261,25 @@ function buildVacancySearchUrl(query: string, searchMode: 'text' | 'resume', res
     parts.push(`resume=${encodeURIComponent(resumeId)}`)
   if (area)
     parts.push(`area=${encodeURIComponent(area)}`)
-  parts.push('items_on_page=100', `page=${page}`)
+  parts.push('ored_clusters=true', 'items_on_page=100', `page=${page}`)
   return `https://hh.ru/search/vacancy?${parts.join('&')}`
 }
 
+async function scrollToLoadAll(page: Page) {
+  let previousCount = 0
+  for (let i = 0; i < 20; i++) {
+    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 3))
+    await page.waitForTimeout(400)
+    const count = await page.$$eval('[data-qa="vacancy-serp__vacancy"]', els => els.length)
+    if (count === previousCount)
+      break
+    previousCount = count
+  }
+  await page.evaluate(() => window.scrollTo(0, 0))
+}
+
 async function collectPageVacancies(page: Page) {
+  await scrollToLoadAll(page)
   return page.$$eval(
     '[data-qa="vacancy-serp__vacancy"]',
     (cards) => {
@@ -326,7 +340,10 @@ export async function applyToJobs(
         await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
         await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
         const more = await collectPageVacancies(page)
+        log.divider('Page Vacancies')
+        log.info(more)
         vacancies.push(...more)
+        await status(`🔎 Страница ${p}`)
       }
     }
 
@@ -463,8 +480,8 @@ export async function applyToJobs(
 
           const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
           if (submitBtn) {
-            await submitBtn.click()
-            await page.waitForTimeout(randomDelay())
+            // await submitBtn.click()
+            // await page.waitForTimeout(randomDelay())
           }
           else {
             const errMsg = 'Not found submit button'
@@ -503,8 +520,8 @@ export async function applyToJobs(
           const submitBtn = await page.$('[data-qa="vacancy-response-letter-submit"]') ?? await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
           // await page.pause()
           if (submitBtn) {
-            await submitBtn.click()
-            await page.waitForTimeout(randomDelay())
+            // await submitBtn.click()
+            // await page.waitForTimeout(randomDelay())
           }
           else {
             const errMsg = 'Not found submit button'
