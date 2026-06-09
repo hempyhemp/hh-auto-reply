@@ -1,8 +1,20 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import cron from 'node-cron'
-import { SETTINGS_REPLY_KEYBOARD, escapeHtml } from '../ui.js'
+import { buildSettingsKeyboard, escapeHtml } from '../ui.js'
 import { getState } from '../state.js'
+
+export async function handleSearchModeToggle(chatId: number): Promise<void> {
+  const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+  const current = settings?.searchMode ?? 'text'
+  const next = current === 'text' ? 'resume' : 'text'
+  await prisma.settings.update({ where: { telegramId: chatId }, data: { searchMode: next } })
+
+  const text = next === 'resume'
+    ? `✅ <b>Поиск по резюме включён</b>\n\n• Есть ключевые слова → <code>?text=...&resume=...</code>\n• Ключевые слова пусты → только <code>?resume=...</code>`
+    : `⛔ <b>Поиск по резюме выключен</b>\n\n• Всегда ищет по ключевым словам → <code>?text=...</code>`
+  await bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: await buildSettingsKeyboard(chatId) })
+}
 
 export async function handleQuery(chatId: number): Promise<void> {
   const state = getState(chatId)
@@ -17,6 +29,7 @@ export async function handleQuery(chatId: number): Promise<void> {
       reply_markup: {
         inline_keyboard: [[
           { text: `✅ Оставить «${currentQuery}»`, callback_data: 'hh_keep_query' },
+          { text: '🗑 Очистить запрос', callback_data: 'hh_clear_query' },
         ]],
       },
     },
@@ -72,12 +85,12 @@ export async function handleAutoToggle(chatId: number): Promise<void> {
   if (state.autoCron) {
     state.autoCron.stop()
     state.autoCron = null
-    await bot.sendMessage(chatId, '⛔ Авто остановлен', { reply_markup: SETTINGS_REPLY_KEYBOARD })
+    await bot.sendMessage(chatId, '⛔ Авто остановлен', { reply_markup: await buildSettingsKeyboard(chatId) })
   }
   else {
     state.autoCron = cron.schedule('0 10 * * 1-5', async () => {
       await bot.sendMessage(chatId, '⏰ Авто-отклик...')
     })
-    await bot.sendMessage(chatId, '✅ Авто включён (пн-пт, 10:00)', { reply_markup: SETTINGS_REPLY_KEYBOARD })
+    await bot.sendMessage(chatId, '✅ Авто включён (пн-пт, 10:00)', { reply_markup: await buildSettingsKeyboard(chatId) })
   }
 }

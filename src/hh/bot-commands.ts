@@ -4,11 +4,12 @@ import { debugFunc } from '@/hh/handlers/debug'
 import { handleApply } from './handlers/apply.js'
 import { doLogin, doLoginByPhone, handleLogin, handleLoginByEmail, handleLoginByPhone } from './handlers/auth.js'
 import { handleSkipped, handleStatus } from './handlers/info.js'
-import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo } from './handlers/onboarding.js'
+import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo, showResumeModeStep } from './handlers/onboarding.js'
+import { handleAreaPick, handleRegion } from './handlers/region.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
-import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery } from './handlers/settings.js'
+import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery, handleSearchModeToggle } from './handlers/settings.js'
 import { getState } from './state.js'
-import { BTN, FILTERS_REPLY_KEYBOARD, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, SETTINGS_REPLY_KEYBOARD } from './ui.js'
+import { BTN, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, buildFiltersKeyboard, buildSettingsKeyboard } from './ui.js'
 
 type MsgHandler = (chatId: number) => Promise<void>
 type CallbackHandler = (chatId: number, messageId: number) => Promise<void>
@@ -19,16 +20,17 @@ const MESSAGE_HANDLERS: Partial<Record<string, MsgHandler>> = {
   [BTN.QUERY]: handleQuery,
   [BTN.MAX]: handleMax,
   [BTN.AUTO_TOGGLE]: handleAutoToggle,
+  [BTN.SEARCH_MODE_TOGGLE]: handleSearchModeToggle,
   [BTN.PROMPT]: handlePrompt,
   [BTN.LOGIN]: handleLogin,
   [BTN.RESUME_LIST]: handleResumeList,
   [BTN.MY_RESUME]: handleMyResume,
   [BTN.SKIPPED]: handleSkipped,
-  [BTN.SETTINGS]: async (chatId) => { await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: SETTINGS_REPLY_KEYBOARD }) },
-  [BTN.FILTERS]: async (chatId) => { await bot.sendMessage(chatId, '🔎 Фильтры:', { reply_markup: FILTERS_REPLY_KEYBOARD }) },
+  [BTN.SETTINGS]: async (chatId) => { await bot.sendMessage(chatId, '⚙️ Настройки:', { reply_markup: await buildSettingsKeyboard(chatId) }) },
+  [BTN.FILTERS]: async (chatId) => { await bot.sendMessage(chatId, '🔎 Фильтры:', { reply_markup: await buildFiltersKeyboard(chatId) }) },
   [BTN.INFO]: async (chatId) => { await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD }) },
   [BTN.BACK]: async (chatId) => { await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD }) },
-  [BTN.REGION]: debugFunc,
+  [BTN.REGION]: handleRegion,
 }
 
 const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
@@ -83,6 +85,14 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     state.queryPromptMessageId = null
     await bot.deleteMessage(chatId, messageId).catch(() => {})
   },
+  hh_clear_query: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.awaitingQuery = false
+    state.queryPromptMessageId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: '' } })
+    await bot.sendMessage(chatId, '🗑 Запрос очищен')
+  },
   hh_keep_max: async (chatId, messageId) => {
     const state = getState(chatId)
     state.awaitingMax = false
@@ -111,6 +121,33 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     await showQueryStep(chatId)
   },
   ob_skip_query: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await showResumeModeStep(chatId)
+  },
+  ob_resume_mode_enable: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await prisma.settings.update({ where: { telegramId: chatId }, data: { searchMode: 'resume' } })
+    await bot.sendMessage(chatId, '✅ Поиск по резюме <b>включён</b>', { parse_mode: 'HTML' })
+    await showResumeInfo(chatId)
+    await showPromptStep(chatId)
+  },
+  ob_resume_mode_disable: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.onboardingStep = null
+    state.onboardingMsgId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await prisma.settings.update({ where: { telegramId: chatId }, data: { searchMode: 'text' } })
+    await bot.sendMessage(chatId, '⛔ Поиск по резюме <b>выключен</b>', { parse_mode: 'HTML' })
+    await showResumeInfo(chatId)
+    await showPromptStep(chatId)
+  },
+  ob_skip_resume_mode: async (chatId, messageId) => {
     const state = getState(chatId)
     state.onboardingStep = null
     state.onboardingMsgId = null
@@ -184,6 +221,10 @@ export function registerHHCommands() {
       const idx = Number(query.data.replace('hh_resume_pick_', ''))
       await handleResumePick(chatId, messageId, idx)
     }
+    else if (query.data?.startsWith('hh_area_')) {
+      const code = query.data.replace('hh_area_', '')
+      await handleAreaPick(chatId, messageId, code)
+    }
   })
 
   bot.on('message', async (msg) => {
@@ -200,6 +241,8 @@ export function registerHHCommands() {
 
     const isAwaiting = state.awaitingEmail || state.awaitingPhone || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.onboardingStep !== null
     const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
+      || msg.text.startsWith(BTN.SEARCH_MODE_TOGGLE)
+      || msg.text.startsWith(BTN.REGION)
 
     if (isMenuButton && isAwaiting) {
       await clearAwaitingState(chatId)
@@ -232,8 +275,7 @@ export function registerHHCommands() {
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
       const updated = await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: msg.text } })
       await bot.sendMessage(chatId, `✅ Запрос: «${updated.searchQuery}»`)
-      await showResumeInfo(chatId)
-      await showPromptStep(chatId)
+      await showResumeModeStep(chatId)
       return
     }
 
@@ -321,6 +363,9 @@ export function registerHHCommands() {
       return
     }
 
-    await MESSAGE_HANDLERS[msg.text]?.(chatId)
+    const handler = MESSAGE_HANDLERS[msg.text]
+      ?? (msg.text.startsWith(BTN.SEARCH_MODE_TOGGLE) ? MESSAGE_HANDLERS[BTN.SEARCH_MODE_TOGGLE] : undefined)
+      ?? (msg.text.startsWith(BTN.REGION) ? MESSAGE_HANDLERS[BTN.REGION] : undefined)
+    await handler?.(chatId)
   })
 }

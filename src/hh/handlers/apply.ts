@@ -13,9 +13,17 @@ export async function handleApply(chatId: number): Promise<void> {
   state.isApplying = true
 
   const reporter = createStatusReporter(chatId)
-  await bot.sendMessage(chatId, `🔄 Ищу вакансии по запросу "${settings.searchQuery}"...`, { reply_markup: APPLYING_REPLY_KEYBOARD })
+  const searchMode = (settings.searchMode ?? 'text') as 'text' | 'resume'
+  const hasQuery = !!settings.searchQuery
+  const searchLabel = searchMode === 'resume'
+    ? (hasQuery ? `по запросу "${settings.searchQuery}" и резюме` : 'по резюме')
+    : `по запросу "${settings.searchQuery}"`
+  await bot.sendMessage(chatId, `🔄 Ищу вакансии ${searchLabel}...`, { reply_markup: APPLYING_REPLY_KEYBOARD })
 
-  applyToJobs({ query: settings.searchQuery, maxApplies: settings.maxApplies }, { chatId, reporter })
+  applyToJobs(
+    { query: settings.searchQuery, maxApplies: settings.maxApplies, searchMode, resumeId: settings.selectedResumeId ?? undefined, area: settings.area ?? undefined },
+    { chatId, reporter },
+  )
     .then(async (result) => {
       state.isApplying = false
       await bot.sendMessage(chatId, '✅ Готово', { reply_markup: MAIN_REPLY_KEYBOARD })
@@ -25,7 +33,10 @@ export async function handleApply(chatId: number): Promise<void> {
       }
 
       const lines: string[] = []
-      lines.push(`📊 <b>Итого по запросу «${settings.searchQuery}»</b>`)
+      const summaryLabel = searchMode === 'resume'
+        ? (settings.searchQuery ? `запросу «${settings.searchQuery}» + резюме` : 'резюме')
+        : `запросу «${settings.searchQuery}»`
+      lines.push(`📊 <b>Итого по ${summaryLabel}</b>`)
       lines.push(`✅ Откликнулся: ${result.applied.length}`)
       lines.push(`⏭ Пропущено: ${result.skipped.length}`)
       if (result.errors.length)

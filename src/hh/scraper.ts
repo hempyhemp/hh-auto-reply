@@ -253,6 +253,18 @@ export async function saveResume(chatId: number, resumeItem: ResumeListItem): Pr
   })
 }
 
+function buildVacancySearchUrl(query: string, searchMode: 'text' | 'resume', resumeId: string | undefined, area: string | undefined, page: number): string {
+  const parts: string[] = []
+  if (query && query !== '--')
+    parts.push(`text=${encodeURIComponent(query)}`)
+  if (searchMode === 'resume' && resumeId)
+    parts.push(`resume=${encodeURIComponent(resumeId)}`)
+  if (area)
+    parts.push(`area=${encodeURIComponent(area)}`)
+  parts.push('items_on_page=100', `page=${page}`)
+  return `https://hh.ru/search/vacancy?${parts.join('&')}`
+}
+
 async function collectPageVacancies(page: Page) {
   return page.$$eval(
     '[data-qa="vacancy-serp__vacancy"]',
@@ -272,7 +284,7 @@ async function collectPageVacancies(page: Page) {
 }
 
 export async function applyToJobs(
-  { query, area = 1, maxApplies = 10 }: ApplyOptions,
+  { query, area, maxApplies = 10, searchMode = 'text', resumeId }: ApplyOptions,
   { chatId, reporter }: { chatId: number, reporter: StatusReporter },
 ): Promise<ApplyResult> {
   return withBrowser(async (browser) => {
@@ -283,7 +295,9 @@ export async function applyToJobs(
 
     await loadSession(page, chatId)
 
-    const url = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=100&page=0` // &area=${area}
+    const url = buildVacancySearchUrl(query, searchMode, resumeId, area, 0)
+    log.info(url)
+
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('[data-qa="serp-item__title"]', { timeout: 10000 }).catch(() => null)
     await page.pause()
@@ -308,7 +322,7 @@ export async function applyToJobs(
       log.info('URL:', page.url())
       log.info('Max page:', maxPage)
       for (let p = 1; p <= maxPage; p++) {
-        const pageUrl = `https://hh.ru/search/vacancy?text=${encodeURIComponent(query)}&items_on_page=100&page=${p}`
+        const pageUrl = buildVacancySearchUrl(query, searchMode, resumeId, area, p)
         await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
         await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
         const more = await collectPageVacancies(page)

@@ -15,7 +15,7 @@ export interface UserState {
   queryPromptMessageId: number | null
   maxPromptMessageId: number | null
   promptPromptMessageId: number | null
-  onboardingStep: 'max' | 'query' | 'prompt' | null
+  onboardingStep: 'max' | 'query' | 'resume_mode' | 'prompt' | null
   onboardingMsgId: number | null
   onboardingAfterResume: boolean
 }

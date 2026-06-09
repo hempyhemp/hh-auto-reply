@@ -1,7 +1,9 @@
 export interface ApplyOptions {
   query: string
-  area?: number
+  area?: string
   maxApplies?: number
+  searchMode?: 'text' | 'resume'
+  resumeId?: string
 }
 
 export interface VacancyRef {

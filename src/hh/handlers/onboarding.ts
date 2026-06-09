@@ -21,7 +21,7 @@ export async function showMaxStep(chatId: number): Promise<void> {
 
   const msg = await bot.sendMessage(
     chatId,
-    `🔢 <b>Шаг 1 из 3 — Максимум откликов</b>\n\n`
+    `🔢 <b>Шаг 1 из 4 — Максимум откликов</b>\n\n`
     + `Сколько вакансий бот обработает за один запуск. Рекомендуем начать с небольшого числа, чтобы проверить письма.\n\n`
     + `Можно оставить текущее значение: <b>${current}</b> или ввести число в чат от 1 до 50:`,
     {
@@ -44,7 +44,7 @@ export async function showQueryStep(chatId: number): Promise<void> {
 
   const msg = await bot.sendMessage(
     chatId,
-    `🔍 <b>Шаг 2 из 3 — Поисковый запрос</b>\n\n`
+    `🔍 <b>Шаг 2 из 4 — Поисковый запрос</b>\n\n`
     + `По этому запросу бот ищет вакансии на hh.ru. Используй профессию или ключевые навыки.\n\n`
     + `Текущий запрос: <b>${current}</b>\n\n`
     + `Введи новый или оставь текущий:`,
@@ -53,6 +53,36 @@ export async function showQueryStep(chatId: number): Promise<void> {
       reply_markup: {
         inline_keyboard: [[
           { text: `Оставить «${current}» ✓`, callback_data: 'ob_skip_query' },
+        ]],
+      },
+    },
+  )
+  state.onboardingMsgId = msg.message_id
+}
+
+export async function showResumeModeStep(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  state.onboardingStep = 'resume_mode'
+  const settings = await prisma.settings.findFirst({ where: { telegramId: chatId } })
+  const enabled = settings?.searchMode === 'resume'
+
+  const msg = await bot.sendMessage(
+    chatId,
+    `🔄 <b>Шаг 3 из 4 — Режим поиска по резюме</b>\n\n`
+    + `Можно комбинировать параметры поиска:\n\n`
+    + `• <b>Выключен</b> — всегда ищет по ключевым словам (<code>?text=...</code>)\n`
+    + `• <b>Включён + есть ключевые слова</b> — комбинирует оба параметра (<code>?text=...&resume=...</code>)\n`
+    + `• <b>Включён + ключевые слова пусты</b> — ищет только по резюме (<code>?resume=...</code>)\n\n`
+    + `Сейчас: <b>${enabled ? '✅ включён' : '⛔ выключен'}</b>`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          {
+            text: enabled ? '⛔ Выключить и продолжить' : '✅ Включить и продолжить',
+            callback_data: enabled ? 'ob_resume_mode_disable' : 'ob_resume_mode_enable',
+          },
+          { text: 'Продолжить →', callback_data: 'ob_skip_resume_mode' },
         ]],
       },
     },
@@ -90,7 +120,7 @@ export async function showPromptStep(chatId: number): Promise<void> {
 
   const msg = await bot.sendMessage(
     chatId,
-    `📝 <b>Шаг 3 из 3 — Промт для AI</b>\n\n`
+    `📝 <b>Шаг 4 из 4 — Промт для AI</b>\n\n`
     + `Инструкция, которую AI получает при написании сопроводительного письма. `
     + `Задаёт стиль, тон и то, что важно упомянуть.\n\n`
     + `<i>Текущий промт:</i>\n<pre>${escapeHtml(currentPrompt)}</pre>\n\n`

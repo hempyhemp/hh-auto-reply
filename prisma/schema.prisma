@@ -43,6 +43,8 @@ model Settings {
   searchQuery      String  @default("Vue")
   maxApplies       Int     @default(1)
   selectedResumeId String?
+  searchMode       String  @default("text")
+  area             String?
 }
 
 model SkippedVacancy {
