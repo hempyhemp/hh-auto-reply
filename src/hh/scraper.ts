@@ -569,6 +569,10 @@ export async function applyToJobs(
         results.applied.push(ref)
         appliedCount++
         consecutiveSkips = 0
+
+        const cached = vacancyCache.get(cacheKey)
+        if (cached)
+          cached.vacancies = cached.vacancies.filter(v => v.href !== vacancy.href)
       }
       catch (err) {
         results.errors.push({ ...ref, message: (err as Error).message })
