@@ -1,5 +1,6 @@
 import bot from '@bot'
 import prisma from '@prisma'
+import { clearVacancyCache } from '../scraper.js'
 import { HH_AREAS, areaLabel } from '../areas.js'
 
 export async function handleRegion(chatId: number): Promise<void> {
@@ -21,6 +22,7 @@ export async function handleRegion(chatId: number): Promise<void> {
 export async function handleAreaPick(chatId: number, messageId: number, rawCode: string): Promise<void> {
   const code = rawCode === 'world' ? null : rawCode
   await prisma.settings.update({ where: { telegramId: chatId }, data: { area: code } })
+  clearVacancyCache(chatId)
   await bot.deleteMessage(chatId, messageId).catch(() => {})
   await bot.sendMessage(chatId, `✅ Регион: <b>${areaLabel(code)}</b>`, { parse_mode: 'HTML' })
 }

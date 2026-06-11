@@ -1,6 +1,7 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import { debugFunc } from '@/hh/handlers/debug'
+import { clearVacancyCache } from './scraper.js'
 import { handleApply } from './handlers/apply.js'
 import { doLogin, doLoginByPhone, handleLogin, handleLoginByEmail, handleLoginByPhone } from './handlers/auth.js'
 import { handleSkipped, handleStatus } from './handlers/info.js'
@@ -91,6 +92,7 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     state.queryPromptMessageId = null
     await bot.deleteMessage(chatId, messageId).catch(() => {})
     await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: '' } })
+    clearVacancyCache(chatId)
     await bot.sendMessage(chatId, '🗑 Запрос очищен')
   },
   hh_keep_max: async (chatId, messageId) => {
@@ -274,6 +276,7 @@ export function registerHHCommands() {
       }
       await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
       const updated = await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: msg.text } })
+      clearVacancyCache(chatId)
       await bot.sendMessage(chatId, `✅ Запрос: «${updated.searchQuery}»`)
       await showResumeModeStep(chatId)
       return
@@ -326,6 +329,7 @@ export function registerHHCommands() {
         state.queryPromptMessageId = null
       }
       const updated = await prisma.settings.update({ where: { telegramId: chatId }, data: { searchQuery: msg.text } })
+      clearVacancyCache(chatId)
       await bot.sendMessage(chatId, `✅ Запрос: "${updated.searchQuery}"`)
       return
     }

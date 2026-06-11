@@ -1,6 +1,7 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import cron from 'node-cron'
+import { clearVacancyCache } from '../scraper.js'
 import { buildSettingsKeyboard, escapeHtml } from '../ui.js'
 import { getState } from '../state.js'
 
@@ -9,6 +10,7 @@ export async function handleSearchModeToggle(chatId: number): Promise<void> {
   const current = settings?.searchMode ?? 'text'
   const next = current === 'text' ? 'resume' : 'text'
   await prisma.settings.update({ where: { telegramId: chatId }, data: { searchMode: next } })
+  clearVacancyCache(chatId)
 
   const text = next === 'resume'
     ? `✅ <b>Поиск по резюме включён</b>\n\n• Есть ключевые слова → <code>?text=...&resume=...</code>\n• Ключевые слова пусты → только <code>?resume=...</code>`

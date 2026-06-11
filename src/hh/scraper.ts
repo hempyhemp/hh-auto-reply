@@ -11,6 +11,28 @@ import { createStatusReporter, escapeHtml } from './ui.js'
 
 const log = createLogger('scraper')
 
+const VACANCY_CACHE_TTL = 60 * 60 * 1000
+
+interface VacancyCacheEntry {
+  vacancies: Array<{ href: string, title: string }>
+  timer: ReturnType<typeof setTimeout>
+}
+
+const vacancyCache = new Map<string, VacancyCacheEntry>()
+
+function vacancyCacheKey(chatId: number, query: string, area: string | undefined, searchMode: string, resumeId: string | undefined): string {
+  return `${chatId}:${query}:${area ?? ''}:${searchMode}:${resumeId ?? ''}`
+}
+
+export function clearVacancyCache(chatId: number): void {
+  for (const [key, entry] of vacancyCache.entries()) {
+    if (key.startsWith(`${chatId}:`)) {
+      clearTimeout(entry.timer)
+      vacancyCache.delete(key)
+    }
+  }
+}
+
 export class NoResumeError extends Error {
   constructor() {
     super('no_resume')
@@ -320,33 +342,47 @@ export async function applyToJobs(
 
     await status('✅ Авторизация выполнена')
 
-    const vacancies = await collectPageVacancies(page)
+    const cacheKey = vacancyCacheKey(chatId, query, area, searchMode, resumeId)
+    const vacancies = vacancyCache.get(cacheKey)?.vacancies ?? null
 
-    const pagerBlock = await page.$('[data-qa="pager-block"]')
-    if (pagerBlock) {
-      const maxPage = await page.$$eval(
-        '[data-qa="pager-block"] [data-qa="pager-page"]',
-        links => Math.max(...links.map((a) => {
-          const pageParam = new URL((a as HTMLAnchorElement).href).searchParams.get('page')
-          return Number(pageParam ?? 0)
-        })),
-      )
-      log.divider('CollectPageVacancies')
-      log.info('URL:', page.url())
-      log.info('Max page:', maxPage)
-      for (let p = 1; p <= maxPage; p++) {
-        const pageUrl = buildVacancySearchUrl(query, searchMode, resumeId, area, p)
-        await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
-        await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
-        const more = await collectPageVacancies(page)
-        log.divider('Page Vacancies')
-        log.info(more)
-        vacancies.push(...more)
-        await status(`🔎 Страница ${p}`)
-      }
+    let allVacancies: Array<{ href: string, title: string }>
+
+    if (vacancies) {
+      log.info('Vacancies from cache:', vacancies.length)
+      allVacancies = vacancies
+      await keep(`✅ Вакансий из кэша: ${allVacancies.length}`)
     }
+    else {
+      allVacancies = await collectPageVacancies(page)
 
-    await keep(`✅ Вакансий найдено: ${vacancies.length}`)
+      const pagerBlock = await page.$('[data-qa="pager-block"]')
+      if (pagerBlock) {
+        const maxPage = await page.$$eval(
+          '[data-qa="pager-block"] [data-qa="pager-page"]',
+          links => Math.max(...links.map((a) => {
+            const pageParam = new URL((a as HTMLAnchorElement).href).searchParams.get('page')
+            return Number(pageParam ?? 0)
+          })),
+        )
+        log.divider('CollectPageVacancies')
+        log.info('URL:', page.url())
+        log.info('Max page:', maxPage)
+        for (let p = 1; p <= maxPage; p++) {
+          const pageUrl = buildVacancySearchUrl(query, searchMode, resumeId, area, p)
+          await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
+          await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
+          const more = await collectPageVacancies(page)
+          log.divider('Page Vacancies')
+          log.info(more)
+          allVacancies.push(...more)
+          await status(`🔎 Страница ${p}`)
+        }
+      }
+
+      const timer = setTimeout(() => vacancyCache.delete(cacheKey), VACANCY_CACHE_TTL).unref()
+      vacancyCache.set(cacheKey, { vacancies: allVacancies, timer })
+      await keep(`✅ Вакансий найдено: ${allVacancies.length}`)
+    }
 
     const resumes = await prisma.resume.findMany({ where: { telegramId: chatId } })
     const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
@@ -366,7 +402,7 @@ export async function applyToJobs(
     let appliedCount = 0
     let consecutiveSkips = 0
     const MAX_CONSECUTIVE_SKIPS = 20
-    for (const vacancy of vacancies) {
+    for (const vacancy of allVacancies) {
       if (appliedCount >= maxApplies)
         break
       if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {

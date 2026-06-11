@@ -1,7 +1,7 @@
 import bot from '@bot'
 import prisma from '@prisma'
 import { createLogger } from '@/logger'
-import { listResumes, NoResumeError, saveResume } from '../scraper.js'
+import { clearVacancyCache, listResumes, NoResumeError, saveResume } from '../scraper.js'
 import { getState } from '../state.js'
 import { escapeHtml, NO_RESUME_MARKUP, safeEdit } from '../ui.js'
 import { startOnboarding } from './onboarding.js'
@@ -94,6 +94,7 @@ export async function handleResumePick(chatId: number, messageId: number, idx: n
     reply_markup: { inline_keyboard: [] },
   })
   await saveResume(chatId, resume)
+  clearVacancyCache(chatId)
   state.pendingResumes = []
   await safeEdit(`✅ Резюме выбрано: ${resume.title}`, {
     chat_id: chatId,
