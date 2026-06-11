@@ -8,7 +8,7 @@ import { handleSkipped, handleStatus } from './handlers/info.js'
 import { finishOnboarding, showPromptStep, showQueryStep, showResumeInfo, showResumeModeStep } from './handlers/onboarding.js'
 import { handleAreaPick, handleRegion } from './handlers/region.js'
 import { handleMyResume, handleResumeList, handleResumePick } from './handlers/resume.js'
-import { DEFAULT_PROMPT, handleAutoToggle, handleMax, handlePrompt, handleQuery, handleSearchModeToggle } from './handlers/settings.js'
+import { DEFAULT_PROMPT, handleAutoToggle, handleExclusions, handleMax, handlePrompt, handleQuery, handleSearchModeToggle } from './handlers/settings.js'
 import { getState } from './state.js'
 import { BTN, INFO_REPLY_KEYBOARD, LOGIN_REPLY_KEYBOARD, MAIN_REPLY_KEYBOARD, buildFiltersKeyboard, buildSettingsKeyboard } from './ui.js'
 
@@ -32,6 +32,7 @@ const MESSAGE_HANDLERS: Partial<Record<string, MsgHandler>> = {
   [BTN.INFO]: async (chatId) => { await bot.sendMessage(chatId, 'ℹ️ Информация:', { reply_markup: INFO_REPLY_KEYBOARD }) },
   [BTN.BACK]: async (chatId) => { await bot.sendMessage(chatId, '🤖 HH Auto-Apply', { reply_markup: MAIN_REPLY_KEYBOARD }) },
   [BTN.REGION]: handleRegion,
+  [BTN.EXCLUSIONS]: handleExclusions,
 }
 
 const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
@@ -100,6 +101,21 @@ const CALLBACK_HANDLERS: Record<string, CallbackHandler> = {
     state.awaitingMax = false
     state.maxPromptMessageId = null
     await bot.deleteMessage(chatId, messageId).catch(() => {})
+  },
+  hh_keep_exclusions: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.awaitingExclusions = false
+    state.exclusionPromptMessageId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+  },
+  hh_clear_exclusions: async (chatId, messageId) => {
+    const state = getState(chatId)
+    state.awaitingExclusions = false
+    state.exclusionPromptMessageId = null
+    await bot.deleteMessage(chatId, messageId).catch(() => {})
+    await prisma.settings.update({ where: { telegramId: chatId }, data: { excludedWords: null } })
+    clearVacancyCache(chatId)
+    await bot.sendMessage(chatId, '🗑 Слова исключения очищены')
   },
   hh_keep_prompt: async (chatId, messageId) => {
     const state = getState(chatId)
@@ -178,6 +194,7 @@ async function clearAwaitingState(chatId: number): Promise<void> {
     state.queryPromptMessageId,
     state.maxPromptMessageId,
     state.promptPromptMessageId,
+    state.exclusionPromptMessageId,
     state.onboardingMsgId,
   ]
   state.awaitingEmail = false
@@ -185,6 +202,7 @@ async function clearAwaitingState(chatId: number): Promise<void> {
   state.awaitingQuery = false
   state.awaitingMax = false
   state.awaitingPrompt = false
+  state.awaitingExclusions = false
   state.onboardingStep = null
   state.onboardingMsgId = null
   state.loginMethodMsgId = null
@@ -192,6 +210,7 @@ async function clearAwaitingState(chatId: number): Promise<void> {
   state.queryPromptMessageId = null
   state.maxPromptMessageId = null
   state.promptPromptMessageId = null
+  state.exclusionPromptMessageId = null
   await Promise.all(msgIds.filter(Boolean).map(id => bot.deleteMessage(chatId, id!).catch(() => {})))
 }
 
@@ -241,7 +260,7 @@ export function registerHHCommands() {
       return
     }
 
-    const isAwaiting = state.awaitingEmail || state.awaitingPhone || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.onboardingStep !== null
+    const isAwaiting = state.awaitingEmail || state.awaitingPhone || state.awaitingQuery || state.awaitingMax || state.awaitingPrompt || state.awaitingExclusions || state.onboardingStep !== null
     const isMenuButton = Object.values(BTN).includes(msg.text as typeof BTN[keyof typeof BTN])
       || msg.text.startsWith(BTN.SEARCH_MODE_TOGGLE)
       || msg.text.startsWith(BTN.REGION)
@@ -348,6 +367,20 @@ export function registerHHCommands() {
       }
       const updated = await prisma.settings.update({ where: { telegramId: chatId }, data: { maxApplies: num } })
       await bot.sendMessage(chatId, `✅ Макс откликов: ${updated.maxApplies}`)
+      return
+    }
+
+    if (state.awaitingExclusions) {
+      state.awaitingExclusions = false
+      await bot.deleteMessage(chatId, msg.message_id).catch(() => {})
+      if (state.exclusionPromptMessageId) {
+        await bot.deleteMessage(chatId, state.exclusionPromptMessageId).catch(() => {})
+        state.exclusionPromptMessageId = null
+      }
+      const normalized = msg.text.split(',').map(w => w.trim()).filter(Boolean).join(', ')
+      await prisma.settings.update({ where: { telegramId: chatId }, data: { excludedWords: normalized || null } })
+      clearVacancyCache(chatId)
+      await bot.sendMessage(chatId, normalized ? `🚫 Слова исключения: <b>${normalized}</b>` : '🗑 Слова исключения очищены', { parse_mode: 'HTML' })
       return
     }
 

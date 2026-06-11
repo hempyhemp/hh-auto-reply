@@ -82,6 +82,26 @@ export async function handlePrompt(chatId: number): Promise<void> {
   state.promptPromptMessageId = msg.message_id
 }
 
+export async function handleExclusions(chatId: number): Promise<void> {
+  const state = getState(chatId)
+  state.awaitingExclusions = true
+  const settings = await prisma.settings.findFirst({ where: { telegramId: chatId } })
+  const current = settings?.excludedWords ?? ''
+  const text = current
+    ? `🚫 Текущие слова исключения: <b>${escapeHtml(current)}</b>\n\nВведи новые через запятую или очисти:`
+    : '🚫 Введи слова исключения через запятую (например: <code>senior, lead, архитектор</code>)\n\nПустое сообщение — убрать все исключения:'
+  const buttons: { text: string; callback_data: string }[] = []
+  if (current) {
+    buttons.push({ text: '✅ Оставить текущие', callback_data: 'hh_keep_exclusions' })
+    buttons.push({ text: '🗑 Очистить', callback_data: 'hh_clear_exclusions' })
+  }
+  const msg = await bot.sendMessage(chatId, text, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons.length ? [buttons] : [] },
+  })
+  state.exclusionPromptMessageId = msg.message_id
+}
+
 export async function handleAutoToggle(chatId: number): Promise<void> {
   const state = getState(chatId)
   if (state.autoCron) {

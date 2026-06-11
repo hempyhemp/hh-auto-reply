@@ -21,7 +21,7 @@ export async function handleApply(chatId: number): Promise<void> {
   await bot.sendMessage(chatId, `🔄 Ищу вакансии ${searchLabel}...`, { reply_markup: APPLYING_REPLY_KEYBOARD })
 
   applyToJobs(
-    { query: settings.searchQuery, maxApplies: settings.maxApplies, searchMode, resumeId: settings.selectedResumeId ?? undefined, area: settings.area ?? undefined },
+    { query: settings.searchQuery, maxApplies: settings.maxApplies, searchMode, resumeId: settings.selectedResumeId ?? undefined, area: settings.area ?? undefined, excludedWords: settings.excludedWords ?? undefined },
     { chatId, reporter },
   )
     .then(async (result) => {

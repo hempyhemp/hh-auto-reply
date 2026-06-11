@@ -20,8 +20,8 @@ interface VacancyCacheEntry {
 
 const vacancyCache = new Map<string, VacancyCacheEntry>()
 
-function vacancyCacheKey(chatId: number, query: string, area: string | undefined, searchMode: string, resumeId: string | undefined): string {
-  return `${chatId}:${query}:${area ?? ''}:${searchMode}:${resumeId ?? ''}`
+function vacancyCacheKey(chatId: number, query: string, area: string | undefined, searchMode: string, resumeId: string | undefined, excludedWords: string | undefined): string {
+  return `${chatId}:${query}:${area ?? ''}:${searchMode}:${resumeId ?? ''}:${excludedWords ?? ''}`
 }
 
 export function clearVacancyCache(chatId: number): void {
@@ -275,7 +275,7 @@ export async function saveResume(chatId: number, resumeItem: ResumeListItem): Pr
   })
 }
 
-function buildVacancySearchUrl(query: string, searchMode: 'text' | 'resume', resumeId: string | undefined, area: string | undefined, page: number): string {
+function buildVacancySearchUrl(query: string, searchMode: 'text' | 'resume', resumeId: string | undefined, area: string | undefined, page: number, excludedWords?: string): string {
   const parts: string[] = []
   if (query && query !== '--')
     parts.push(`text=${encodeURIComponent(query)}`)
@@ -283,6 +283,10 @@ function buildVacancySearchUrl(query: string, searchMode: 'text' | 'resume', res
     parts.push(`resume=${encodeURIComponent(resumeId)}`)
   if (area)
     parts.push(`area=${encodeURIComponent(area)}`)
+  if (excludedWords) {
+    for (const word of excludedWords.split(',').map(w => w.trim()).filter(Boolean))
+      parts.push(`excluded_text=${encodeURIComponent(word)}`)
+  }
   parts.push('ored_clusters=true', 'items_on_page=100', `page=${page}`)
   return `https://hh.ru/search/vacancy?${parts.join('&')}`
 }
@@ -319,7 +323,7 @@ async function collectPageVacancies(page: Page) {
 }
 
 export async function applyToJobs(
-  { query, area, maxApplies = 10, searchMode = 'text', resumeId }: ApplyOptions,
+  { query, area, maxApplies = 10, searchMode = 'text', resumeId, excludedWords }: ApplyOptions,
   { chatId, reporter }: { chatId: number, reporter: StatusReporter },
 ): Promise<ApplyResult> {
   return withBrowser(async (browser) => {
@@ -330,7 +334,7 @@ export async function applyToJobs(
 
     await loadSession(page, chatId)
 
-    const url = buildVacancySearchUrl(query, searchMode, resumeId, area, 0)
+    const url = buildVacancySearchUrl(query, searchMode, resumeId, area, 0, excludedWords)
     log.info(url)
 
     await page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -342,7 +346,7 @@ export async function applyToJobs(
 
     await status('✅ Авторизация выполнена')
 
-    const cacheKey = vacancyCacheKey(chatId, query, area, searchMode, resumeId)
+    const cacheKey = vacancyCacheKey(chatId, query, area, searchMode, resumeId, excludedWords)
     const vacancies = vacancyCache.get(cacheKey)?.vacancies ?? null
 
     let allVacancies: Array<{ href: string, title: string }>
@@ -368,7 +372,7 @@ export async function applyToJobs(
         log.info('URL:', page.url())
         log.info('Max page:', maxPage)
         for (let p = 1; p <= maxPage; p++) {
-          const pageUrl = buildVacancySearchUrl(query, searchMode, resumeId, area, p)
+          const pageUrl = buildVacancySearchUrl(query, searchMode, resumeId, area, p, excludedWords)
           await page.goto(pageUrl, { waitUntil: 'domcontentloaded' })
           await page.waitForSelector('[data-qa="vacancy-serp__vacancy"]', { timeout: 10000 }).catch(() => null)
           const more = await collectPageVacancies(page)

@@ -9,12 +9,14 @@ export interface UserState {
   awaitingQuery: boolean
   awaitingMax: boolean
   awaitingPrompt: boolean
+  awaitingExclusions: boolean
   pendingResumes: ResumeListItem[]
   loginMethodMsgId: number | null
   loginPromptMessageId: number | null
   queryPromptMessageId: number | null
   maxPromptMessageId: number | null
   promptPromptMessageId: number | null
+  exclusionPromptMessageId: number | null
   onboardingStep: 'max' | 'query' | 'resume_mode' | 'prompt' | null
   onboardingMsgId: number | null
   onboardingAfterResume: boolean
@@ -29,12 +31,14 @@ function makeUserState(): UserState {
     awaitingQuery: false,
     awaitingMax: false,
     awaitingPrompt: false,
+    awaitingExclusions: false,
     pendingResumes: [],
     loginMethodMsgId: null,
     loginPromptMessageId: null,
     queryPromptMessageId: null,
     maxPromptMessageId: null,
     promptPromptMessageId: null,
+    exclusionPromptMessageId: null,
     onboardingStep: null,
     onboardingMsgId: null,
     onboardingAfterResume: false,

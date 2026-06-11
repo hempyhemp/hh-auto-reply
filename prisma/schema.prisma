@@ -45,6 +45,7 @@ model Settings {
   selectedResumeId String?
   searchMode       String  @default("text")
   area             String?
+  excludedWords    String?
 }
 
 model SkippedVacancy {

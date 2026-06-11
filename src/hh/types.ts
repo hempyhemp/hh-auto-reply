@@ -4,6 +4,7 @@ export interface ApplyOptions {
   maxApplies?: number
   searchMode?: 'text' | 'resume'
   resumeId?: string
+  excludedWords?: string
 }
 
 export interface VacancyRef {
