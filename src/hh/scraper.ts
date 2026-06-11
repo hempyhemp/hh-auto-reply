@@ -284,7 +284,6 @@ async function collectPageVacancies(page: Page) {
     '[data-qa="vacancy-serp__vacancy"]',
     (cards) => {
       return cards
-        .filter(card => card.querySelector('[data-qa="vacancy-serp__vacancy_response"]') !== null)
         .map((card) => {
           const titleEl = card.querySelector('[data-qa="serp-item__title"]') as HTMLAnchorElement | null
           return {
@@ -480,8 +479,8 @@ export async function applyToJobs(
 
           const submitBtn = await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
           if (submitBtn) {
-            // await submitBtn.click()
-            // await page.waitForTimeout(randomDelay())
+            await submitBtn.click()
+            await page.waitForTimeout(randomDelay())
           }
           else {
             const errMsg = 'Not found submit button'
@@ -520,8 +519,8 @@ export async function applyToJobs(
           const submitBtn = await page.$('[data-qa="vacancy-response-letter-submit"]') ?? await page.$('[data-qa="vacancy-response-submit-popup"]')// vacancy-response-popup-submit
           // await page.pause()
           if (submitBtn) {
-            // await submitBtn.click()
-            // await page.waitForTimeout(randomDelay())
+            await submitBtn.click()
+            await page.waitForTimeout(randomDelay())
           }
           else {
             const errMsg = 'Not found submit button'
