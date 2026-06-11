@@ -365,7 +365,7 @@ export async function applyToJobs(
 
     let appliedCount = 0
     let consecutiveSkips = 0
-    const MAX_CONSECUTIVE_SKIPS = 10
+    const MAX_CONSECUTIVE_SKIPS = 20
     for (const vacancy of vacancies) {
       if (appliedCount >= maxApplies)
         break
@@ -392,7 +392,6 @@ export async function applyToJobs(
 
         if (!description) {
           results.skipped.push(ref)
-          appliedCount++
           consecutiveSkips++
           continue
         }
@@ -400,7 +399,6 @@ export async function applyToJobs(
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
         if (!applyBtn) {
           results.skipped.push(vacancy)
-          appliedCount++
           consecutiveSkips++
           continue
         }
@@ -414,7 +412,6 @@ export async function applyToJobs(
           await relocationConfirm.click()
 
         if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results)) {
-          appliedCount++
           consecutiveSkips++
           continue
         }
