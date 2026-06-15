@@ -458,13 +458,15 @@ export async function applyToJobs(
 
         // console.log('[LetterDebug]:', '\nresume: ', resume.data, '\ndescription: ', description, '\nprompt: ', user!.prompt)
         await keep(`✍️ Генерирую письмо: ${vacancy.title}`)
+        let letterError: string | null = null
         const letterPromise = Promise.race([
           createMessage(resume.data, description, user!.prompt),
           new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('Letter generation timeout (60s)')), 80000),
+            setTimeout(() => reject(new Error('Letter generation timeout (80s)')), 80000),
           ),
         ]).catch((err: Error) => {
           log.error('Letter Error:', err.message)
+          letterError = err.message
           return null
         })
 
@@ -500,6 +502,10 @@ export async function applyToJobs(
             await addLetter?.click()
           }
           const letter = await letterPromise
+          if (letterError) {
+            await keep(`❌ Ошибка генерации письма:\n${escapeHtml(letterError)}`)
+            break
+          }
           if (letter) {
             await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)
             const letterInput = await page.$('[data-qa="vacancy-response-popup-form-letter-input"]')
@@ -507,9 +513,6 @@ export async function applyToJobs(
             await letterInput?.click()
             await letterInput?.fill(letter)
             // await page.pause()
-          }
-          else {
-            await keep(`Письмо не сгенерировано, ошибка`)
           }
 
           await page.waitForTimeout(randomDelay())
@@ -531,6 +534,10 @@ export async function applyToJobs(
           log.debug(`single flow: ${chatId}`)
 
           const letter = await letterPromise
+          if (letterError) {
+            await keep(`❌ Ошибка генерации письма:\n${escapeHtml(letterError)}`)
+            break
+          }
 
           if (letter) {
             await keep(`✅ <b>${escapeHtml(vacancy.title)}</b>\n\n${escapeHtml(letter)}`)

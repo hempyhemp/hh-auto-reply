@@ -32,10 +32,13 @@ async function getClient() {
     hostname: '127.0.0.1',
     port: 4096,
     config: {
-      model: 'openrouter/deepseek/deepseek-v4-flash',
+      model: 'openrouter/openai/gpt-oss-120b:free',
       provider: {
         openrouter: {
           options: { apiKey: process.env.OPENROUTER_API_KEY },
+          models: {
+            'openai/gpt-oss-120b:free': {},
+          },
         },
       },
       agent: {
