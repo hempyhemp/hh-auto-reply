@@ -100,15 +100,14 @@ async function skipIfQuestionnaire(
   vacancy: { title: string, href: string },
   ref: VacancyRef,
   chatId: number,
-  status: (msg: string) => Promise<void>,
+  keep: (msg: string) => Promise<void>,
   results: ApplyResult,
 ): Promise<boolean> {
   await page.waitForSelector(APPLY_OUTCOME_SELECTOR, { timeout: 5000 }).catch(() => {})
   const hasQuestionnaire = await page.$('[data-qa="employer-asking-for-test"], [data-qa="task-body"]')
   if (!hasQuestionnaire)
     return false
-  const { keep } = createStatusReporter(chatId)
-  await keep(`Пропущена вакансия: ${vacancy.title}`)
+  await keep(`⏭ Пропущена: <b>требует заполнения анкеты/теста</b>\n${escapeHtml(vacancy.title)}`)
   log.warn(`[x] ${vacancy.title} hasQuestionnaire`)
   await prisma.skippedVacancy.upsert({
     where: { telegramId_href: { telegramId: chatId, href: vacancy.href } },
@@ -431,6 +430,7 @@ export async function applyToJobs(
           .catch(() => '')
 
         if (!description) {
+          await keep(`⏭ Пропущена: <b>описание недоступно</b>\n${escapeHtml(vacancy.title)}`)
           results.skipped.push(ref)
           consecutiveSkips++
           continue
@@ -438,6 +438,7 @@ export async function applyToJobs(
 
         const applyBtn = await page.$('[data-qa="vacancy-response-link-top"]')
         if (!applyBtn) {
+          await keep(`⏭ Пропущена: <b>уже откликались или кнопка не найдена</b>\n${escapeHtml(vacancy.title)}`)
           results.skipped.push(vacancy)
           consecutiveSkips++
           continue
@@ -451,7 +452,7 @@ export async function applyToJobs(
         if (relocationConfirm)
           await relocationConfirm.click()
 
-        if (await skipIfQuestionnaire(page, vacancy, ref, chatId, status, results)) {
+        if (await skipIfQuestionnaire(page, vacancy, ref, chatId, keep, results)) {
           consecutiveSkips++
           continue
         }

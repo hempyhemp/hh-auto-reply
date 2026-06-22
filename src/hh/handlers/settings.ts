@@ -2,7 +2,7 @@ import bot from '@bot'
 import prisma from '@prisma'
 import cron from 'node-cron'
 import { clearVacancyCache } from '../scraper.js'
-import { buildSettingsKeyboard, escapeHtml } from '../ui.js'
+import { buildFiltersKeyboard, buildSettingsKeyboard, escapeHtml } from '../ui.js'
 import { getState } from '../state.js'
 
 export async function handleSearchModeToggle(chatId: number): Promise<void> {
@@ -15,7 +15,7 @@ export async function handleSearchModeToggle(chatId: number): Promise<void> {
   const text = next === 'resume'
     ? `✅ <b>Поиск по резюме включён</b>\n\n• Есть ключевые слова → <code>?text=...&resume=...</code>\n• Ключевые слова пусты → только <code>?resume=...</code>`
     : `⛔ <b>Поиск по резюме выключен</b>\n\n• Всегда ищет по ключевым словам → <code>?text=...</code>`
-  await bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: await buildSettingsKeyboard(chatId) })
+  await bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: await buildFiltersKeyboard(chatId) })
 }
 
 export async function handleQuery(chatId: number): Promise<void> {

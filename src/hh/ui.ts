@@ -38,13 +38,11 @@ export const MAIN_REPLY_KEYBOARD = {
 }
 
 export async function buildSettingsKeyboard(chatId: number) {
-  const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
-  const modeLabel = settings?.searchMode === 'resume' ? 'резюме' : 'текст'
   return {
     keyboard: [
       [{ text: BTN.MAX }, { text: BTN.AUTO_TOGGLE }],
       [{ text: BTN.RESUME_LIST }, { text: BTN.PROMPT }],
-      [{ text: `${BTN.SEARCH_MODE_TOGGLE}: ${modeLabel}` }, { text: BTN.LOGIN }],
+      [{ text: BTN.LOGIN }],
       [{ text: BTN.BACK }],
     ],
     resize_keyboard: true,
@@ -54,12 +52,14 @@ export async function buildSettingsKeyboard(chatId: number) {
 
 export async function buildFiltersKeyboard(chatId: number) {
   const settings = await prisma.settings.findUnique({ where: { telegramId: chatId } })
+  const modeLabel = settings?.searchMode === 'resume' ? 'резюме' : 'текст'
   const fullLabel = areaLabel(settings?.area)
   const regionShort = fullLabel.split(' ').slice(1).join(' ')
   return {
     keyboard: [
       [{ text: BTN.QUERY }],
       [{ text: BTN.EXCLUSIONS }, { text: `${BTN.REGION}: ${regionShort}` }],
+      [{ text: `${BTN.SEARCH_MODE_TOGGLE}: ${modeLabel}` }],
       [{ text: BTN.BACK }],
     ],
     resize_keyboard: true,
