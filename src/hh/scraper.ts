@@ -347,9 +347,12 @@ export async function applyToJobs(
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('[data-qa="serp-item__title"]', { timeout: 10000 }).catch(() => null)
     await page.pause()
-    if (!await page.$('[data-qa="profileAndResumes-button"]')) {
+    if (!await page.$('[data-qa="applicantProfileMe-button"]')) {
       return { ...results, error: 'Не авторизован. Выполните login' }
     }
+    // if (!await page.$('[data-qa="profileAndResumes-button"]')) {
+    //   return { ...results, error: 'Не авторизован. Выполните login' }
+    // }
 
     await status('✅ Авторизация выполнена')
 
