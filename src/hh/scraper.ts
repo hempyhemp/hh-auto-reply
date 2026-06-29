@@ -474,7 +474,7 @@ export async function applyToJobs(
         const letterPromise = Promise.race([
           createMessage(resume.data, description, user!.prompt),
           new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('Letter generation timeout (80s)')), 80000),
+            setTimeout(() => reject(new Error('Letter generation timeout (120s)')), 120000),
           ),
         ]).catch((err: Error) => {
           log.error('Letter Error:', err.message)
